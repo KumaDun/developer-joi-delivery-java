@@ -26,12 +26,6 @@ public class OrderController {
     public ResponseEntity<Order> placeOrder(
             @Valid @RequestBody PlaceOrderRequest request
     ) {
-        if (request.userId() == null || request.userId().isBlank()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "User ID is required"
-            );
-        }
-
         Order order = orderService.placeOrder(request.userId());
 
         return ResponseEntity
@@ -51,12 +45,6 @@ public class OrderController {
             @PathVariable("orderId") String orderId,
             @Valid @RequestBody ChangeOrderStatusRequest request
     ) {
-        if (request.status() == null) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST, "Status is required"
-            );
-        }
-
         Order order = orderService.changeStatus(
                 orderId, request.status()
         );

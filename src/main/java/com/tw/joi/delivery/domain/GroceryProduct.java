@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 @Getter
 @Setter
@@ -24,6 +25,7 @@ public class GroceryProduct extends Product {
 
     private BigDecimal discount;
 
+    @JsonIgnore
     private GroceryStore store;
 
     @Builder

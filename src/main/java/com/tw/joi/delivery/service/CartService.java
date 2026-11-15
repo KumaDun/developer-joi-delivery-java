@@ -25,7 +25,14 @@ public class CartService {
         Cart cart = fetchCartForUser(user);
         GroceryProduct product = productService.getProduct(addProductRequest.getProductId(),
                                                            addProductRequest.getOutletId());
-        if (product.getAvailableStock() < quantity) {
+        long existingQuantity = cart.getCartItems().stream()
+                .filter(item -> item.getProductId().equals(product.getProductId()))
+                .mapToLong(CartItem::getQuantity)
+                .sum();
+
+        long totalQuantity = existingQuantity + quantity;
+
+        if (totalQuantity > product.getAvailableStock()) {
             throw new IllegalStateException(
                     "Insufficient stock for product: " + product.getProductId()
             );

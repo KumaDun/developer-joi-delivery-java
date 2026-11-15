@@ -106,6 +106,41 @@ class CartServiceTest {
     }
 
     @Test
+    void shouldRejectWhenCombinedQuantityExceedsStock() {
+        stubProductLookup();
+
+        cartService.addProductToCartForUser(request(3));
+
+        CartItem existing = cart.getCartItems().getFirst();
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> cartService.addProductToCartForUser(request(3))
+        );
+
+        assertEquals(1, cart.getCartItems().size());
+        assertSame(existing, cart.getCartItems().getFirst());
+        assertEquals(3, existing.getQuantity());
+        assertEquals(5, product.getAvailableStock());
+    }
+
+    @Test
+    void shouldAllowCombinedQuantityEqualToStock() {
+        stubProductLookup();
+
+        cartService.addProductToCartForUser(request(3));
+        cartService.addProductToCartForUser(request(2));
+
+        long totalQuantity = cart.getCartItems().stream()
+                .filter(item -> item.getProductId().equals("product101"))
+                .mapToLong(CartItem::getQuantity)
+                .sum();
+
+        assertEquals(5L, totalQuantity);
+        assertEquals(5, product.getAvailableStock());
+    }
+
+    @Test
     void shouldRejectOutOfStockProduct() {
         stubProductLookup();
         product.setAvailableStock(0);
