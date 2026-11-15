@@ -14,7 +14,7 @@ public interface StoreRepository {
 
     void save(Outlet store);
 
-    Map<String, Outlet> storesById = new HashMap<>();
+    final Map<String, Outlet> storesById = new HashMap<>();
 
     Collection<Outlet> findAll();
 }

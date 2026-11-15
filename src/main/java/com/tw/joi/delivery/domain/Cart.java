@@ -22,7 +22,7 @@ public class Cart {
     private Outlet outlet;
 
     @Builder.Default
-    private List<Product> products = new ArrayList<>();
+    private List<CartItem> cartItems = new ArrayList<>();
 
     private User user;
 

@@ -30,7 +30,7 @@ public class GroceryProduct extends Product {
     public GroceryProduct(String productId, String productName, BigDecimal mrp, Cart cart,
                           BigDecimal sellingPrice, BigDecimal weight, int expiryDate, int threshold,
                           int availableStock, GroceryStore store, BigDecimal discount) {
-        super(productId, productName,  mrp);
+        super(productId, productName,  mrp, sellingPrice);
         this.sellingPrice = sellingPrice;
         this.weight = weight;
         this.expiryDate = expiryDate;
@@ -40,4 +40,8 @@ public class GroceryProduct extends Product {
         this.discount = discount;
     }
 
+    @Override
+    public BigDecimal getUnitPrice() {
+        return sellingPrice != null ? sellingPrice : super.getUnitPrice();
+    }
 }
