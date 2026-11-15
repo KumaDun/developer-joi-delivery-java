@@ -1,5 +1,6 @@
 package com.tw.joi.delivery.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.tw.joi.delivery.domain.CartItem;
 import com.tw.joi.delivery.domain.GroceryProduct;
 import com.tw.joi.delivery.domain.Outlet;
@@ -20,6 +21,7 @@ public record CartInfo(
             String outletId,
             List<ProductInfo> inventory
     ) {
+
         public static OutletInfo from(Outlet outlet) {
             if (outlet == null) {
                 return null;
@@ -43,6 +45,7 @@ public record CartInfo(
             String phoneNumber,
             CartInfo cart
     ) {
+
         public static UserInfo from(User user) {
             if (user == null) {
                 return null;
@@ -72,6 +75,7 @@ public record CartInfo(
             BigDecimal discount,
             OutletInfo store
     ) {
+
         public static ProductInfo from(GroceryProduct product) {
             return new ProductInfo(
                     product.getProductId(),
@@ -89,33 +93,17 @@ public record CartInfo(
     }
 
     public record CartItemInfo(
-            String productId,
-            String productName,
-            BigDecimal mrp,
-            BigDecimal sellingPrice,
-            BigDecimal weight,
-            int expiryDate,
-            int threshold,
-            int availableStock,
-            BigDecimal discount,
-            OutletInfo store,
+            @JsonUnwrapped ProductInfo product,
             int quantity,
             BigDecimal unitPrice,
             BigDecimal totalPrice
     ) {
+
         public static CartItemInfo from(
-                CartItem item, GroceryProduct product) {
+                CartItem item,
+                GroceryProduct product) {
             return new CartItemInfo(
-                    item.getProductId(),
-                    item.getProductName(),
-                    product.getMrp(),
-                    product.getSellingPrice(),
-                    product.getWeight(),
-                    product.getExpiryDate(),
-                    product.getThreshold(),
-                    product.getAvailableStock(),
-                    product.getDiscount(),
-                    OutletInfo.from(product.getStore()),
+                    ProductInfo.from(product),
                     item.getQuantity(),
                     item.getUnitPrice(),
                     item.getTotalPrice()

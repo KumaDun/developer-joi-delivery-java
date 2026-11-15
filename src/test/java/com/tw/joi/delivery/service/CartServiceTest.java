@@ -63,6 +63,7 @@ class CartServiceTest {
         CartProductInfo result =
                 cartService.addProductToCartForUser(request(2));
 
+        // Verify the actual cart was updated.
         assertEquals(1, cart.getCartItems().size());
 
         CartItem item = cart.getCartItems().getFirst();
@@ -71,11 +72,26 @@ class CartServiceTest {
         assertEquals(new BigDecimal("10.50"), item.getUnitPrice());
         assertEquals(new BigDecimal("21.00"), item.getTotalPrice());
 
-        assertSame(cart, result.cart());
-        assertSame(product, result.product());
+        // Verify the returned cart DTO.
+        assertEquals(cart.getCartId(), result.cart().cartId());
+        assertEquals("store101", result.cart().outlet().outletId());
+        assertEquals("user101", result.cart().user().userId());
+        assertEquals(1, result.cart().products().size());
+
+        var returnedItem = result.cart().products().getFirst();
+
+        assertEquals("product101", returnedItem.product().productId());
+        assertEquals("Wheat Bread", returnedItem.product().productName());
+        assertEquals(2, returnedItem.quantity());
+        assertEquals(new BigDecimal("10.50"), returnedItem.unitPrice());
+        assertEquals(new BigDecimal("21.00"), returnedItem.totalPrice());
+
+        // Verify the separate top-level product and price.
+        assertEquals("product101", result.product().productId());
+        assertEquals("Wheat Bread", result.product().productName());
         assertEquals(new BigDecimal("10.50"), result.sellingPrice());
 
-        // Adding to the cart does not reserve stock.
+        // Adding to a cart does not reserve stock.
         assertEquals(5, product.getAvailableStock());
     }
 
@@ -192,6 +208,30 @@ class CartServiceTest {
     private void stubProductLookup() {
         when(productService.getProduct("product101", "store101"))
                 .thenReturn(product);
+    }
+
+    @Test
+    void shouldReturnCartInfoWithQuantityAndPrices() {
+        stubProductLookup();
+
+        cart.getCartItems().add(new CartItem(product, 2));
+
+        var result = cartService.getCartInfoForUser("user101");
+
+        assertEquals("cart101", result.cartId());
+        assertEquals("store101", result.outlet().outletId());
+        assertEquals("user101", result.user().userId());
+        assertEquals(1, result.products().size());
+
+        var returnedItem = result.products().getFirst();
+
+        assertEquals("product101", returnedItem.product().productId());
+        assertEquals(2, returnedItem.quantity());
+        assertEquals(new BigDecimal("10.50"), returnedItem.unitPrice());
+        assertEquals(new BigDecimal("21.00"), returnedItem.totalPrice());
+
+        assertEquals(1, cart.getCartItems().size());
+        assertEquals(5, product.getAvailableStock());
     }
 
     private AddProductRequest request(int quantity) {

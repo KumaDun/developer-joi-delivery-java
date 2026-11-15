@@ -2,6 +2,7 @@ package com.tw.joi.delivery.controller;
 
 import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
+import com.tw.joi.delivery.dto.response.CartInfo;
 import com.tw.joi.delivery.dto.response.CartProductInfo;
 import com.tw.joi.delivery.exception.UserDoesNotExistException;
 import com.tw.joi.delivery.service.CartService;
@@ -24,7 +25,7 @@ public class CartController {
     }
 
     @GetMapping("/view")
-    public ResponseEntity<Cart> viewCart(@RequestParam(name = "userId") @NotBlank String userId) {
-        return ResponseEntity.ok(cartService.getCartForUser(userId));
+    public ResponseEntity<CartInfo> viewCart(@RequestParam(name = "userId") @NotBlank String userId) {
+        return ResponseEntity.ok(cartService.getCartInfoForUser(userId));
     }
 }
