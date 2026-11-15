@@ -1,9 +1,10 @@
 package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.GroceryProduct;
+import com.tw.joi.delivery.domain.Product;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.exception.StoreIdDoesNotExistException;
-import com.tw.joi.delivery.repository.InMemoryGroceryStoreRepository;
+import com.tw.joi.delivery.repository.InMemoryOutletRepository;
 import com.tw.joi.delivery.repository.StoreRepository;
 import com.tw.joi.delivery.seedData.SeedData;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,20 +19,22 @@ class ProductServiceTest {
     @BeforeEach
     void setUp() {
         StoreRepository storeRepository =
-                new InMemoryGroceryStoreRepository(SeedData.groceryStores);
+                new InMemoryOutletRepository(SeedData.groceryStores);
 
         productService = new ProductService(storeRepository);
     }
 
     @Test
     void shouldReturnProductFromStoreInventory() {
-        GroceryProduct product =
+        Product product =
                 productService.getProduct("product101", "store101");
 
-        assertNotNull(product);
-        assertEquals("product101", product.getProductId());
-        assertEquals("store101", product.getStore().getOutletId());
-        assertTrue(SeedData.store101.getInventory().contains(product));
+        GroceryProduct grocery =
+                assertInstanceOf(GroceryProduct.class, product);
+
+        assertEquals("product101", grocery.getProductId());
+        assertEquals("store101", grocery.getStore().getOutletId());
+        assertTrue(SeedData.store101.getInventory().contains(grocery));
     }
 
     @Test

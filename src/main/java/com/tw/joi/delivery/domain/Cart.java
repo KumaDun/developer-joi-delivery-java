@@ -19,7 +19,7 @@ import lombok.Setter;
 public class Cart {
 
     private String cartId;
-    private Outlet outlet;
+    private Outlet<?> outlet;
 
     @Builder.Default
     private List<CartItem> cartItems = new ArrayList<>();

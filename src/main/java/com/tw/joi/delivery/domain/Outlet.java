@@ -12,7 +12,7 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class Outlet {
+public class Outlet<P extends Product> {
 
     protected String name;
 
@@ -20,11 +20,10 @@ public class Outlet {
 
     protected String outletId;
 
-    public void addProduct(GroceryProduct product) {
+    public void addProduct(P product) {
     }
 
-    public Optional<GroceryProduct> findProduct(String productId) {
+    public Optional<P> findProduct(String productId) {
         return Optional.empty();
-    }
-}
+    }}
 

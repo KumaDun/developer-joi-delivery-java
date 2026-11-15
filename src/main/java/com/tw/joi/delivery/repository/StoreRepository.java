@@ -8,13 +8,13 @@ import java.util.Map;
 import java.util.Optional;
 
 public interface StoreRepository {
-    Optional<Outlet> findById(String storeId);
+    Optional<Outlet<?>> findById(String storeId);
 
-    Optional<Outlet> findByName(String storeName);
+    Optional<Outlet<?>> findByName(String storeName);
 
-    void save(Outlet store);
+    void save(Outlet<?> store);
 
-    final Map<String, Outlet> storesById = new HashMap<>();
+    final Map<String, Outlet<?>> storesById = new HashMap<>();
 
-    Collection<Outlet> findAll();
+    Collection<Outlet<?>> findAll();
 }

@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class InMemoryGroceryStoreRepositoryTest {
+class InMemoryOutletRepositoryTest {
 
     @Test
     void shouldReturnStoreWhenItExists() {
@@ -19,9 +19,9 @@ class InMemoryGroceryStoreRepositoryTest {
                 .build();
 
         StoreRepository repository =
-                new InMemoryGroceryStoreRepository(List.of(store));
+                new InMemoryOutletRepository(List.of(store));
 
-        Optional<Outlet> result = repository.findById("store-a");
+        Optional<Outlet<?>> result = repository.findById("store-a");
 
         assertSame(store, result.orElseThrow());
     }
@@ -34,9 +34,9 @@ class InMemoryGroceryStoreRepositoryTest {
                 .build();
 
         StoreRepository repository =
-                new InMemoryGroceryStoreRepository(List.of(store));
+                new InMemoryOutletRepository(List.of(store));
 
-        Optional<Outlet> result = repository.findById("store-b");
+        Optional<Outlet<?>> result = repository.findById("store-b");
 
         assertTrue(result.isEmpty());
 
@@ -45,8 +45,8 @@ class InMemoryGroceryStoreRepositoryTest {
     @Test
     void shouldReturnNullWhenStoreNameDoesNotExist() {
         StoreRepository repository =
-                new InMemoryGroceryStoreRepository(List.of());
-        Optional<Outlet> result = repository.findByName("Fresh Pick");
+                new InMemoryOutletRepository(List.of());
+        Optional<Outlet<?>> result = repository.findByName("Fresh Pick");
 
         assertTrue(result.isEmpty());
     }

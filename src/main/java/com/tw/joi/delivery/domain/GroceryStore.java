@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
-public class GroceryStore extends Outlet {
+public class GroceryStore extends Outlet<GroceryProduct> {
 
     private Set<GroceryProduct> inventory=new HashSet<>();
 

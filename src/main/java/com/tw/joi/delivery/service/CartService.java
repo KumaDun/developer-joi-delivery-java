@@ -1,9 +1,6 @@
 package com.tw.joi.delivery.service;
 
-import com.tw.joi.delivery.domain.Cart;
-import com.tw.joi.delivery.domain.CartItem;
-import com.tw.joi.delivery.domain.GroceryProduct;
-import com.tw.joi.delivery.domain.User;
+import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
 import com.tw.joi.delivery.dto.response.CartInfo;
 import com.tw.joi.delivery.dto.response.CartInfo.OutletInfo;
@@ -30,7 +27,7 @@ public class CartService {
     public CartProductInfo addProductToCartForUser(AddProductRequest addProductRequest) {
         User user=userService.fetchUserById(addProductRequest.getUserId());
         Cart cart = fetchCartForUser(user);
-        GroceryProduct product = productService.getProduct(addProductRequest.getProductId(),
+        Product product = productService.getProduct(addProductRequest.getProductId(),
                                                            addProductRequest.getOutletId());
 
         int quantity = addProductRequest.getQuantity();
@@ -54,7 +51,7 @@ public class CartService {
         List<CartInfo.CartItemInfo> products = new ArrayList<>();
 
         for (CartItem existingItem : cart.getCartItems()) {
-            GroceryProduct existingProduct;
+            Product existingProduct;
 
             if (existingItem.getProductId().equals(product.getProductId())) {
                 existingProduct = product;
@@ -82,7 +79,7 @@ public class CartService {
         CartProductInfo response = new CartProductInfo(
                 cartInfo,
                 ProductInfo.from(product),
-                product.getSellingPrice()
+                product.getUnitPrice()
         );
 
         cart.getCartItems().add(newItem);
@@ -95,7 +92,7 @@ public class CartService {
 
         List<CartInfo.CartItemInfo> products = cart.getCartItems().stream()
                 .map(item -> {
-                    GroceryProduct product = productService.getProduct(
+                    Product product = productService.getProduct(
                             item.getProductId(),
                             cart.getOutlet().getOutletId()
                     );

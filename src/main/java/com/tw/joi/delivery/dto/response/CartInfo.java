@@ -1,10 +1,8 @@
 package com.tw.joi.delivery.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
-import com.tw.joi.delivery.domain.CartItem;
-import com.tw.joi.delivery.domain.GroceryProduct;
-import com.tw.joi.delivery.domain.Outlet;
-import com.tw.joi.delivery.domain.User;
+import com.tw.joi.delivery.domain.*;
+
 import java.math.BigDecimal;
 import java.util.List;
 
@@ -22,7 +20,7 @@ public record CartInfo(
             List<ProductInfo> inventory
     ) {
 
-        public static OutletInfo from(Outlet outlet) {
+        public static OutletInfo from(Outlet<?> outlet) {
             if (outlet == null) {
                 return null;
             }
@@ -63,31 +61,67 @@ public record CartInfo(
         }
     }
 
-    public record ProductInfo(
-            String productId,
-            String productName,
-            BigDecimal mrp,
-            BigDecimal sellingPrice,
+    public enum ProductType {
+        GROCERY,
+        MEAL
+    }
+
+    public record GroceryDetails(
             BigDecimal weight,
             int expiryDate,
             int threshold,
-            int availableStock,
             BigDecimal discount,
             OutletInfo store
     ) {
 
-        public static ProductInfo from(GroceryProduct product) {
-            return new ProductInfo(
-                    product.getProductId(),
-                    product.getProductName(),
-                    product.getMrp(),
-                    product.getSellingPrice(),
+        public static GroceryDetails from(GroceryProduct product) {
+            return new GroceryDetails(
                     product.getWeight(),
                     product.getExpiryDate(),
                     product.getThreshold(),
-                    product.getAvailableStock(),
                     product.getDiscount(),
                     OutletInfo.from(product.getStore())
+            );
+        }
+    }
+
+    public record ProductInfo(
+            String productId,
+            String productName,
+            BigDecimal mrp,
+            BigDecimal catalogUnitPrice,
+            int availableStock,
+            ProductType productType,
+            GroceryDetails groceryDetails
+    ) {
+
+        public static ProductInfo from(Product product) {
+            if (product instanceof GroceryProduct grocery) {
+                return new ProductInfo(
+                        grocery.getProductId(),
+                        grocery.getProductName(),
+                        grocery.getMrp(),
+                        grocery.getUnitPrice(),
+                        grocery.getAvailableStock(),
+                        ProductType.GROCERY,
+                        GroceryDetails.from(grocery)
+                );
+            }
+
+            if (product instanceof FoodProduct meal) {
+                return new ProductInfo(
+                        meal.getProductId(),
+                        meal.getProductName(),
+                        meal.getMrp(),
+                        meal.getUnitPrice(),
+                        meal.getAvailableStock(),
+                        ProductType.MEAL,
+                        null
+                );
+            }
+
+            throw new IllegalArgumentException(
+                    "Unsupported product type"
             );
         }
     }
@@ -101,7 +135,7 @@ public record CartInfo(
 
         public static CartItemInfo from(
                 CartItem item,
-                GroceryProduct product) {
+                Product product) {
             return new CartItemInfo(
                     ProductInfo.from(product),
                     item.getQuantity(),

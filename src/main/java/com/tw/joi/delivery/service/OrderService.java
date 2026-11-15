@@ -1,10 +1,6 @@
 package com.tw.joi.delivery.service;
 
-import com.tw.joi.delivery.domain.Cart;
-import com.tw.joi.delivery.domain.CartItem;
-import com.tw.joi.delivery.domain.GroceryProduct;
-import com.tw.joi.delivery.domain.Order;
-import com.tw.joi.delivery.domain.OrderStatus;
+import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.exception.OrderDoesNotExistException;
 import com.tw.joi.delivery.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -92,7 +88,7 @@ public class OrderService {
         List<CartItem> acceptedItems = new ArrayList<>();
 
         for (CartItem item : cartItems) {
-            GroceryProduct product = productService.getProduct(
+            Product product = productService.getProduct(
                     item.getProductId(), outletId
             );
 

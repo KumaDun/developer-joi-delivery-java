@@ -1,6 +1,7 @@
 package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.GroceryProduct;
+import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.Outlet;
 import com.tw.joi.delivery.domain.Product;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
@@ -22,8 +23,8 @@ public class ProductService {
         this.storeRepository = storeRepository;
     }
 
-    public GroceryProduct getProduct(String productId, String outletId) {
-        Outlet store = storeRepository.findById(outletId)
+    public Product getProduct(String productId, String outletId) {
+        Outlet<?> store = storeRepository.findById(outletId)
                 .orElseThrow(() ->
                         new StoreIdDoesNotExistException(outletId));
 
@@ -32,7 +33,7 @@ public class ProductService {
                         new ProductDoesNotExistException(productId, outletId));
     }
 
-    public GroceryProduct getProduct(String productId) {
+    public Product getProduct(String productId) {
         return storeRepository.findAll().stream()
                 .flatMap(store -> store.findProduct(productId).stream())
                 .findFirst()
