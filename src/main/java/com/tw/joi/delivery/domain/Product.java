@@ -15,5 +15,4 @@ public abstract class Product {
     protected String productId;
     protected String productName;
     protected BigDecimal mrp;
-
 }

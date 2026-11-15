@@ -1,9 +1,8 @@
 package com.tw.joi.delivery.seedData;
 
-import com.tw.joi.delivery.domain.Cart;
-import com.tw.joi.delivery.domain.GroceryProduct;
-import com.tw.joi.delivery.domain.GroceryStore;
-import com.tw.joi.delivery.domain.User;
+import com.tw.joi.delivery.domain.*;
+import jakarta.annotation.Nonnull;
+
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
@@ -16,6 +15,7 @@ public class SeedData {
     public static GroceryStore store102 = SeedData.createStore("Natural Choice", "store102");
 
     public static User user101= SeedData.createUser("user101", "John", "Doe");
+    public static User user102 = SeedData.createUser("user102", "Rachel", "Zane");
 
     public static Map<String, Cart> cartForUsers = Map.of(
         "user101", createCartForUser("user101", "John", "Doe", "cart101"),
@@ -26,7 +26,8 @@ public class SeedData {
                       createGroceryProduct("Spinach", "product102", store101),
                       createGroceryProduct("Crackers", "product103", store101));
 
-    public static List<User> users = Arrays.asList(user101);
+    public static List<User> users = Arrays.asList(user101, user102);
+    public static List<GroceryStore> groceryStores = Arrays.asList(store101, store102);
 
     public static Cart createCartForUser(String userId, String firstName, String lastName,
                                          String cartId) {
@@ -60,16 +61,18 @@ public class SeedData {
     }
 
     private static GroceryProduct createGroceryProduct(String productName,
-                                                       String productId, GroceryStore store) {
-        return GroceryProduct.builder()
-            .productName(productName)
-            .productId(productId)
-            .mrp(BigDecimal.valueOf(10.5))
-            .weight(BigDecimal.valueOf(500.00))
-            .store(store)
-            .threshold(10)
-            .availableStock(30)
-            .build();
+                                                       String productId, @Nonnull GroceryStore store) {
+        GroceryProduct product = GroceryProduct.builder()
+                .productName(productName)
+                .productId(productId)
+                .mrp(BigDecimal.valueOf(10.5))
+                .weight(BigDecimal.valueOf(500.00))
+                .threshold(10)
+                .availableStock(30)
+                .build();
+
+        store.addProduct(product);
+        return product;
     }
 
 }

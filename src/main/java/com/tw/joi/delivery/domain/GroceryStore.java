@@ -1,6 +1,7 @@
 package com.tw.joi.delivery.domain;
 
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,4 +22,22 @@ public class GroceryStore extends Outlet {
         this.inventory = new HashSet<>();
     }
 
+    @Override
+    public Optional<GroceryProduct> findProduct(String productId) {
+        return inventory.stream()
+                .filter(product -> productId.equals(product.getProductId()))
+                .findFirst();
+    }
+
+    @Override
+    public void addProduct(GroceryProduct product) {
+        if (findProduct(product.getProductId()).isPresent()) {
+            throw new IllegalArgumentException(
+                    "Product already exists in inventory: " + product.getProductId()
+            );
+        }
+
+        inventory.add(product);
+        product.setStore(this);
+    }
 }

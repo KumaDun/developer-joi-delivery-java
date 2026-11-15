@@ -1,9 +1,7 @@
 package com.tw.joi.delivery.domain;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -22,5 +20,11 @@ public class Outlet {
 
     protected String outletId;
 
+    public void addProduct(GroceryProduct product) {
+    }
+
+    public Optional<GroceryProduct> findProduct(String productId) {
+        return Optional.empty();
+    }
 }
 
