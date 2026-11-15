@@ -1,19 +1,15 @@
 package com.tw.joi.delivery.controller;
 
 import com.tw.joi.delivery.domain.Order;
-import com.tw.joi.delivery.domain.OrderStatus;
 import com.tw.joi.delivery.dto.request.ChangeOrderStatusRequest;
 import com.tw.joi.delivery.dto.request.PlaceOrderRequest;
-import com.tw.joi.delivery.exception.OrderDoesNotExistException;
 import com.tw.joi.delivery.service.OrderService;
 import java.net.URI;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/orders")

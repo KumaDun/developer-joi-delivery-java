@@ -1,11 +1,9 @@
 package com.tw.joi.delivery.repository;
 
-import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.Outlet;
 
 import java.util.Collection;
 import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 
 public class InMemoryOutletRepository implements StoreRepository {

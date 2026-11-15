@@ -1,15 +1,10 @@
 package com.tw.joi.delivery.service;
 
-import com.tw.joi.delivery.domain.GroceryProduct;
-import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.Outlet;
 import com.tw.joi.delivery.domain.Product;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.exception.StoreIdDoesNotExistException;
 import com.tw.joi.delivery.repository.StoreRepository;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
 import org.springframework.stereotype.Service;
 
 @Service

@@ -1,10 +1,8 @@
 package com.tw.joi.delivery.controller;
 
-import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
 import com.tw.joi.delivery.dto.response.CartInfo;
 import com.tw.joi.delivery.dto.response.CartProductInfo;
-import com.tw.joi.delivery.exception.UserDoesNotExistException;
 import com.tw.joi.delivery.service.CartService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
