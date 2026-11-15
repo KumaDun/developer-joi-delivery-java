@@ -63,11 +63,4 @@ public class OrderController {
 
         return ResponseEntity.ok(order);
     }
-
-    @ExceptionHandler(OrderDoesNotExistException.class)
-    public ResponseEntity<Void> handleOrderNotFound(
-            OrderDoesNotExistException exception
-    ) {
-        return ResponseEntity.notFound().build();
-    }
 }
