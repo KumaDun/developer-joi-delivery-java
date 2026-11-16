@@ -10,7 +10,7 @@ public class RepositoryConfiguration {
 
     @Bean
     public StoreRepository storeRepository() {
-        return new InMemoryOutletRepository(SeedData.groceryStores);
+        return new InMemoryOutletRepository(SeedData.outlets);
     }
 
     @Bean

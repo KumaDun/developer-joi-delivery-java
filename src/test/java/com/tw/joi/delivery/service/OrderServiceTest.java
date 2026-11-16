@@ -77,11 +77,54 @@ class OrderServiceTest {
         assertEquals(new BigDecimal("21.00"), order.getTotalPrice());
         assertEquals(1, order.getItems().size());
         assertEquals(2, order.getItems().getFirst().getQuantity());
+        assertNull(order.getItems().getFirst().getSpiceLevel());
+        assertNull(order.getItems().getFirst().getUtensilsNeeded());
 
         assertSame(
                 order,
                 orderRepository.findById(order.getOrderId()).orElseThrow()
         );
+        assertTrue(cart.getCartItems().isEmpty());
+    }
+
+    @Test
+    void shouldPreserveEachMealLinesCustomizationWhenPlacingOrder() {
+        Restaurant restaurant = Restaurant.builder()
+                .outletId("restaurant101")
+                .build();
+        FoodProduct meal = FoodProduct.builder()
+                .productId("meal101")
+                .productName("Chicken Curry")
+                .unitPrice(new BigDecimal("25.00"))
+                .availableStock(5)
+                .build();
+        restaurant.addProduct(meal);
+
+        CartItem mild = new CartItem(meal, 1, meal.getUnitPrice(), SpiceLevel.MILD, false);
+        CartItem hot = new CartItem(meal, 2, meal.getUnitPrice(), SpiceLevel.HOT, true);
+        cart.setOutlet(restaurant);
+        cart.setCartItems(new ArrayList<>(List.of(mild, hot)));
+        when(cartService.getCartForUser("user101")).thenReturn(cart);
+        when(productService.getProduct("meal101", "restaurant101")).thenReturn(meal);
+
+        Order order = orderService.placeOrder("user101");
+        Order saved = orderRepository.findById(order.getOrderId()).orElseThrow();
+
+        assertSame(order, saved);
+        assertEquals("restaurant101", saved.getOutletId());
+        assertEquals(new BigDecimal("75.00"), saved.getTotalPrice());
+        assertEquals(2, saved.getItems().size());
+
+        CartItem first = saved.getItems().getFirst();
+        CartItem second = saved.getItems().get(1);
+        assertNotSame(mild, first);
+        assertNotSame(hot, second);
+        assertEquals(1, first.getQuantity());
+        assertEquals(SpiceLevel.MILD, first.getSpiceLevel());
+        assertEquals(Boolean.FALSE, first.getUtensilsNeeded());
+        assertEquals(2, second.getQuantity());
+        assertEquals(SpiceLevel.HOT, second.getSpiceLevel());
+        assertEquals(Boolean.TRUE, second.getUtensilsNeeded());
         assertTrue(cart.getCartItems().isEmpty());
     }
 

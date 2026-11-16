@@ -49,6 +49,17 @@ Dummy Products for Stores to sell and users to buy from.
 | product102 | Spinach     | store101   |
 | product103 | Crackers    | store101   |
 
+### Restaurant Meals
+
+The seeded restaurant `restaurant101` (Spice Kitchen) provides prepared meals.
+Meal prices and availability are stored on `FoodProduct`, and each meal belongs
+to its restaurant's menu. Grocery stores and restaurants share the outlet repository.
+
+| ProductId | ProductName | OutletId | Unit Price | Available Stock |
+|-----------|-------------|----------|------------|-----------------|
+| meal101 | Chicken Curry | restaurant101 | 25.00 | 20 |
+| meal102 | Vegetable Curry | restaurant101 | 18.00 | 20 |
+
 ## API
 
 Below is a list of API endpoints with their respective input and output. Please note that the application needs to be running for the following endpoints to work. For more information about how to run the application, please refer to run the application section above.
@@ -84,6 +95,47 @@ Adding a product checks the combined quantity already in the cart against availa
 It does not reserve or decrease stock. Each successful addition creates a cart item;
 its response contains the quantity from that addition.
 
+For a restaurant meal, the same endpoint also accepts `spiceLevel` and
+`utensilsNeeded`:
+
+```json
+{
+  "userId": "user101",
+  "outletId": "restaurant101",
+  "productId": "meal101",
+  "quantity": 2,
+  "spiceLevel": "MEDIUM",
+  "utensilsNeeded": true
+}
+```
+
+The added item is returned directly:
+
+```json
+{
+  "productId": "meal101",
+  "productName": "Chicken Curry",
+  "quantity": 2,
+  "unitPrice": 25.00,
+  "totalPrice": 50.00,
+  "spiceLevel": "MEDIUM",
+  "utensilsNeeded": true
+}
+```
+
+`spiceLevel` accepts `NONE`, `MILD`, `MEDIUM`, or `HOT` and defaults to `NONE`.
+`utensilsNeeded` defaults to `false`. Choices apply to every unit in that cart
+item and do not change its price. Separate additions can have different choices;
+stock checks include the quantities of all items for the same product.
+
+Grocery items omit both customization fields from responses. Providing either
+non-null option for groceries, including `utensilsNeeded: false`, returns HTTP 400.
+Unknown spice values also return HTTP 400.
+
+An empty cart takes its outlet from the first successful addition. While it
+contains items, additions from another store or restaurant return HTTP 400.
+A rejected addition leaves both the existing items and outlet unchanged.
+
 ### View Cart
 ```http
 GET /cart/view?userId=user101
@@ -94,7 +146,7 @@ Returns the complete `Cart` directly with HTTP 200:
 | Field | Contents |
 |-------|----------|
 | `cartId` | Cart identifier |
-| `outlet` | Store or restaurant, including inventory where exposed by the outlet |
+| `outlet` | Store or restaurant, including inventory where exposed by the outlet; initially `null` for empty seeded carts |
 | `cartItems` | Items with the same fields as the add-product response above |
 | `user` | Cart owner; the user's cart back-reference is omitted |
 

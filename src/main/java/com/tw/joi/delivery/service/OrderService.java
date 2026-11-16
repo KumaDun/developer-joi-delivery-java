@@ -121,7 +121,13 @@ public class OrderService {
             }
 
             acceptedItems.add(
-                    new CartItem(product, item.getQuantity(), currentPrice)
+                    new CartItem(
+                            product,
+                            item.getQuantity(),
+                            currentPrice,
+                            item.getSpiceLevel(),
+                            item.getUtensilsNeeded()
+                    )
             );
         }
 

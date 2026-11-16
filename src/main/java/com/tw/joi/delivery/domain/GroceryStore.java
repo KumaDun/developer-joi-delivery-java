@@ -39,5 +39,6 @@ public class GroceryStore extends Outlet<GroceryProduct> {
 
         inventory.add(product);
         product.setStore(this);
+        product.setOutlet(this);
     }
 }

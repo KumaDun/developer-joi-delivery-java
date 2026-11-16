@@ -1,12 +1,11 @@
 package com.tw.joi.delivery.domain;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.Objects;
 
-@Setter
 @Getter
 public class CartItem {
 
@@ -15,7 +14,18 @@ public class CartItem {
     private final int quantity;
     private final BigDecimal unitPrice;
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private final SpiceLevel spiceLevel;
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private final Boolean utensilsNeeded;
+
     public CartItem(Product product, int quantity, BigDecimal unitPrice) {
+        this(product, quantity, unitPrice, null, null);
+    }
+
+    public CartItem(Product product, int quantity, BigDecimal unitPrice,
+                    SpiceLevel spiceLevel, Boolean utensilsNeeded) {
         Objects.requireNonNull(product, "Product must not be null");
 
         if (quantity <= 0) {
@@ -31,6 +41,19 @@ public class CartItem {
                     "Unit price must not be negative"
             );
         }
+
+        if (product instanceof FoodProduct) {
+            this.spiceLevel = spiceLevel != null ? spiceLevel : SpiceLevel.NONE;
+            this.utensilsNeeded = Boolean.TRUE.equals(utensilsNeeded);
+        } else {
+            if (spiceLevel != null || utensilsNeeded != null) {
+                throw new IllegalArgumentException(
+                        "Spice level and utensils are only available for restaurant meals"
+                );
+            }
+            this.spiceLevel = null;
+            this.utensilsNeeded = null;
+        }
         this.productId = Objects.requireNonNull(
                 product.getProductId(), "Product ID must not be null"
         );
@@ -42,7 +65,7 @@ public class CartItem {
     }
 
     public CartItem(Product product, int quantity) {
-        this(product, quantity, product.getUnitPrice());
+        this(product, quantity, Objects.requireNonNull(product, "Product must not be null").getUnitPrice());
     }
 
     public BigDecimal getTotalPrice() {

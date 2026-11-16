@@ -7,8 +7,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.domain.CartItem;
+import com.tw.joi.delivery.domain.FoodProduct;
 import com.tw.joi.delivery.domain.GroceryProduct;
 import com.tw.joi.delivery.domain.GroceryStore;
+import com.tw.joi.delivery.domain.SpiceLevel;
 import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
@@ -105,6 +107,10 @@ public class CartControllerTest {
                         .value(10.5))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.totalPrice")
                         .value(21.0))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.spiceLevel")
+                        .doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.utensilsNeeded")
+                        .doesNotExist())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.cart")
                         .doesNotExist())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.product")
@@ -121,6 +127,60 @@ public class CartControllerTest {
         assertEquals("store101", captured.getOutletId());
         assertEquals("product101", captured.getProductId());
         assertEquals(2, captured.getQuantity());
+    }
+
+    @Test
+    void shouldBindAndReturnRestaurantCustomization() throws Exception {
+        FoodProduct meal = FoodProduct.builder()
+                .productId("meal101")
+                .productName("Chicken Curry")
+                .unitPrice(new BigDecimal("25.00"))
+                .build();
+        CartItem item = new CartItem(meal, 2, meal.getUnitPrice(), SpiceLevel.HOT, true);
+        when(cartService.addProductToCartForUser(any(AddProductRequest.class)))
+                .thenReturn(item);
+
+        mockMvc.perform(MockMvcRequestBuilders.post("/cart/product")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "userId": "user101",
+                              "outletId": "restaurant101",
+                              "productId": "meal101",
+                              "quantity": 2,
+                              "spiceLevel": "HOT",
+                              "utensilsNeeded": true
+                            }
+                            """))
+                .andExpect(status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.productId").value("meal101"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.quantity").value(2))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.totalPrice").value(50.0))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.spiceLevel").value("HOT"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.utensilsNeeded").value(true));
+
+        ArgumentCaptor<AddProductRequest> captor = ArgumentCaptor.forClass(AddProductRequest.class);
+        verify(cartService).addProductToCartForUser(captor.capture());
+        assertEquals(SpiceLevel.HOT, captor.getValue().getSpiceLevel());
+        assertEquals(Boolean.TRUE, captor.getValue().getUtensilsNeeded());
+    }
+
+    @Test
+    void shouldRejectUnknownSpiceLevelBeforeCallingService() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.post("/cart/product")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                            {
+                              "userId": "user101",
+                              "outletId": "restaurant101",
+                              "productId": "meal101",
+                              "quantity": 1,
+                              "spiceLevel": "UNKNOWN"
+                            }
+                            """))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(cartService);
     }
 
     @Test

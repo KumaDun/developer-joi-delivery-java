@@ -1,5 +1,6 @@
 package com.tw.joi.delivery.dto.request;
 
+import com.tw.joi.delivery.domain.SpiceLevel;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import lombok.Getter;
@@ -20,4 +21,8 @@ public class AddProductRequest {
 
     @Positive(message = "Quantity must be greater than zero")
     private int quantity;
+
+    private SpiceLevel spiceLevel;
+
+    private Boolean utensilsNeeded;
 }

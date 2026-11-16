@@ -2,6 +2,7 @@ package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.domain.CartItem;
+import com.tw.joi.delivery.domain.Outlet;
 import com.tw.joi.delivery.domain.Product;
 import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
@@ -26,6 +27,17 @@ public class CartService {
         Product product = productService.getProduct(addProductRequest.getProductId(),
                                                            addProductRequest.getOutletId());
 
+        Outlet<?> outlet = product.getOutlet();
+        if (outlet == null || !addProductRequest.getOutletId().equals(outlet.getOutletId())) {
+            throw new IllegalArgumentException("Product does not belong to the requested outlet");
+        }
+
+        if (!cart.getCartItems().isEmpty()
+                && (cart.getOutlet() == null
+                    || !outlet.getOutletId().equals(cart.getOutlet().getOutletId()))) {
+            throw new IllegalArgumentException("Cart can only contain products from one outlet");
+        }
+
         int quantity = addProductRequest.getQuantity();
 
         long existingQuantity = cart.getCartItems().stream()
@@ -40,8 +52,10 @@ public class CartService {
                     "Insufficient stock for product: " + product.getProductId()
             );
         }
-        CartItem newItem = new CartItem(product, quantity);
+        CartItem newItem = new CartItem(product, quantity, product.getUnitPrice(),
+                addProductRequest.getSpiceLevel(), addProductRequest.getUtensilsNeeded());
         cart.getCartItems().add(newItem);
+        cart.setOutlet(outlet);
 
         return newItem;
     }
