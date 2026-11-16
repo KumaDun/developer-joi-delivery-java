@@ -6,6 +6,8 @@ import com.tw.joi.delivery.exception.EmptyCartException;
 import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.repository.InMemoryOrderRepository;
 import com.tw.joi.delivery.repository.OrderRepository;
+import com.tw.joi.delivery.repository.UserRepository;
+import com.tw.joi.delivery.repository.InMemoryUserRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -31,6 +33,8 @@ class OrderServiceTest {
     private ProductService productService;
     private OrderRepository orderRepository;
     private OrderService orderService;
+    private UserRepository userRepository;
+    private User user;
 
     private GroceryProduct product;
     private Cart cart;
@@ -40,11 +44,14 @@ class OrderServiceTest {
         cartService = mock(CartService.class);
         productService = mock(ProductService.class);
         orderRepository = spy(new InMemoryOrderRepository());
+        user = User.builder().userId("user101").build();
+        userRepository = spy(new InMemoryUserRepository(List.of(user)));
 
         orderService = new OrderService(
                 cartService,
                 productService,
                 orderRepository,
+                new UserService(userRepository),
                 Clock.fixed(NOW, ZoneOffset.UTC)
         );
 
@@ -91,6 +98,7 @@ class OrderServiceTest {
                 orderRepository.findById(order.getOrderId()).orElseThrow()
         );
         assertTrue(cart.getCartItems().isEmpty());
+        assertEquals(order.getOrderId(), user.getLastOrderId());
     }
 
     @Test
@@ -125,6 +133,8 @@ class OrderServiceTest {
         CartItem second = saved.getItems().get(1);
         assertNotSame(mild, first);
         assertNotSame(hot, second);
+        assertEquals(mild.getCartItemId(), first.getCartItemId());
+        assertEquals(hot.getCartItemId(), second.getCartItemId());
         assertEquals(1, first.getQuantity());
         assertEquals(SpiceLevel.MILD, first.getSpiceLevel());
         assertEquals(Boolean.FALSE, first.getUtensilsNeeded());
@@ -183,6 +193,11 @@ class OrderServiceTest {
 
     @Test
     void shouldHoldCartLockDuringValidationAndSaving() {
+        product = spy(product);
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(product), "Stock reads must share the inventory update lock");
+            return invocation.callRealMethod();
+        }).when(product).getAvailableStock();
         when(cartService.getCartForUser("user101")).thenReturn(cart);
         when(productService.getProduct("product101", "store101"))
                 .thenAnswer(invocation -> {
@@ -256,6 +271,7 @@ class OrderServiceTest {
     @Test
     void shouldPreserveCartWhenSavingOrderFails() {
         stubCheckout();
+        user.setLastOrderId("previous-order");
         doThrow(new IllegalStateException("Storage unavailable"))
                 .when(orderRepository).save(any(Order.class));
 
@@ -264,6 +280,27 @@ class OrderServiceTest {
                 () -> orderService.placeOrder("user101")
         );
 
+        assertEquals(1, cart.getCartItems().size());
+        assertEquals(2, cart.getCartItems().getFirst().getQuantity());
+        assertEquals("previous-order", user.getLastOrderId());
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void shouldRemoveNewOrderAndPreserveCartAndHistoryIfHistorySaveFails() {
+        stubCheckout();
+        user.setLastOrderId("previous-order");
+        doThrow(new IllegalStateException("User storage unavailable"))
+                .when(userRepository).save(user);
+
+        assertThrows(IllegalStateException.class, () -> orderService.placeOrder("user101"));
+
+        var captured = org.mockito.ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(captured.capture());
+        String newOrderId = captured.getValue().getOrderId();
+        verify(orderRepository).deleteById(newOrderId);
+        assertTrue(orderRepository.findById(newOrderId).isEmpty());
+        assertEquals("previous-order", user.getLastOrderId());
         assertEquals(1, cart.getCartItems().size());
         assertEquals(2, cart.getCartItems().getFirst().getQuantity());
     }

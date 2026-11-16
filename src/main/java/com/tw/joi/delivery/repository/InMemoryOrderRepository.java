@@ -18,4 +18,9 @@ public class InMemoryOrderRepository implements OrderRepository {
     public Optional<Order> findById(String orderId) {
         return Optional.ofNullable(ordersById.get(orderId));
     }
+
+    @Override
+    public void deleteById(String orderId) {
+        ordersById.remove(orderId);
+    }
 }

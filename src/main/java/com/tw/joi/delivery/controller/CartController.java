@@ -3,6 +3,7 @@ package com.tw.joi.delivery.controller;
 import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.domain.CartItem;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
+import com.tw.joi.delivery.dto.request.UpdateCartItemQuantityRequest;
 import com.tw.joi.delivery.service.CartService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -27,6 +28,11 @@ public class CartController {
         return ResponseEntity.ok(cartService.getCartSnapshotForUser(userId));
     }
 
-    // TODO delete product from cart
-    // TODO change quantity of product
+    @PatchMapping("/items/{cartItemId}")
+    public ResponseEntity<Cart> updateQuantity(
+            @PathVariable("cartItemId") @NotBlank String cartItemId,
+            @Valid @RequestBody UpdateCartItemQuantityRequest request) {
+        return ResponseEntity.ok(cartService.updateCartItemQuantity(
+                request.userId(), cartItemId, request.quantity()));
+    }
 }

@@ -88,6 +88,7 @@ Request Body (`quantity` must be greater than zero)
 Returns the added `CartItem` directly with HTTP 200. Example for a unit price of 10.50:
 ```json
 {
+  "cartItemId": "afbfab53-a215-43ef-ab7d-495b5ffb847e",
   "productId": "product101",
   "productName": "Wheat Bread",
   "quantity": 2,
@@ -118,6 +119,7 @@ The added item is returned directly:
 
 ```json
 {
+  "cartItemId": "7bdbf199-32bb-40aa-aa6a-a4c8d60d2be7",
   "productId": "meal101",
   "productName": "Chicken Curry",
   "quantity": 2,
@@ -137,6 +139,10 @@ Grocery items omit both customization fields from responses. Providing either
 non-null option for groceries, including `utensilsNeeded: false`, returns HTTP 400.
 Unknown spice values also return HTTP 400.
 
+Each addition creates a distinct `cartItemId`, even for the same product and
+customization. A cart's `cartId` identifies the whole cart; `cartItemId` identifies
+one line. IDs are included in both add-product responses and viewed cart items.
+
 An empty cart takes its outlet from the first successful addition. While it
 contains items, additions from another store or restaurant return HTTP 400.
 A rejected addition leaves both the existing items and outlet unchanged.
@@ -149,6 +155,40 @@ return HTTP 409 with a message such as:
   "message": "Requested quantity 21 exceeds available stock 20 for product meal101"
 }
 ```
+
+### Change Cart Item Quantity
+
+```http
+PATCH /cart/items/7bdbf199-32bb-40aa-aa6a-a4c8d60d2be7
+Content-Type: application/json
+```
+
+```json
+{
+  "userId": "user101",
+  "quantity": 3
+}
+```
+
+Returns the updated `Cart` snapshot with HTTP 200. The absolute target quantity
+changes only the selected line, retaining its `cartItemId`, captured name, unit
+price and customization. Other lines, including another spice version of the
+same meal, are unchanged. Line totals are recalculated from the captured price.
+
+Quantity zero removes the line; removing the final line also clears the cart's
+outlet. Negative or missing quantities and blank/missing user IDs return HTTP 400.
+Unknown users or item IDs, including an item belonging to another user's cart,
+return HTTP 404. A removed item ID no longer exists; adding the product again
+creates a new ID.
+
+Increases check combined quantities across all lines for the product and return
+HTTP 409 without mutation if stock is insufficient. Reductions and removal remain
+allowed after stock drops or the product is removed from the catalog. These
+operations use the existing cart lock; stock checks also use the product lock.
+
+Setting the same target quantity again does not add units or change item identity.
+Concurrent absolute updates to the same item use the last processed target value.
+Cart quantity changes do not change inventory stock.
 
 ### View Cart
 ```http
@@ -207,6 +247,7 @@ meals with medium spice and utensils requested (ID and timestamp are generated):
   "outletId": "restaurant101",
   "items": [
     {
+      "cartItemId": "7bdbf199-32bb-40aa-aa6a-a4c8d60d2be7",
       "productId": "meal101",
       "productName": "Chicken Curry",
       "quantity": 2,
@@ -237,6 +278,33 @@ GET /orders/{orderId}
 
 Returns the saved order directly with HTTP 200, including item quantities, prices,
 meal customizations, total and current status. An unknown order ID returns HTTP 404.
+
+### Last Purchase
+
+```http
+GET /users/{userId}/last-purchase
+```
+
+Returns HTTP 200 with the user's most recently placed order and its outlet:
+
+```json
+{
+  "orderId": "7e5f6e92-21c0-4b72-9b64-778fbf2957b5",
+  "outletId": "restaurant101",
+  "outletName": "Spice Kitchen",
+  "orderedAt": "2026-11-16T10:00:00Z"
+}
+```
+
+A valid user with no previous order receives HTTP 204 with no body. An unknown
+user receives HTTP 404. The reference is updated only after an order is saved;
+failed checkouts leave the previous reference unchanged. Later cancellation does
+not change which order was most recently placed.
+
+Only the last order ID is stored on the user; outlet ID and time come from the
+saved order, and the outlet name comes from the current catalog. If that outlet
+is unavailable, its ID is retained and `outletName` is `null`. History is in memory
+and is lost when the application restarts.
 
 ### Inventory Health
 ```http
@@ -291,6 +359,52 @@ stock-health thresholds have not been defined.
 The report copies the current stock and threshold values without changing inventory.
 Negative stock or threshold values are treated as invalid catalog data and fail
 the report rather than produce a misleading status.
+
+### Update Inventory Stock
+
+Both grocery products and restaurant meals support stock updates. To set an
+absolute nonnegative count:
+
+```http
+PUT /inventory/store101/products/product101/stock
+Content-Type: application/json
+```
+
+```json
+{"availableStock":40}
+```
+
+To add or subtract a quantity:
+
+```http
+POST /inventory/store101/products/product101/stock-adjustments
+Content-Type: application/json
+```
+
+```json
+{"delta":-3}
+```
+
+Both return HTTP 200 with the resulting count. After the two examples above:
+
+```json
+{
+  "outletId": "store101",
+  "productId": "product101",
+  "availableStock": 37
+}
+```
+
+For meals, use the restaurant ID and meal ID in the same URL pattern. Absolute
+updates are idempotent; each adjustment request applies its delta once.
+
+Missing values, negative absolute counts, zero adjustments and numeric overflow
+return HTTP 400. An adjustment that would make stock negative returns HTTP 409
+without changing inventory. Unknown outlet/product combinations return HTTP 404.
+
+Updates and availability reads use the same product lock. Inventory changes do
+not rewrite cart quantities; checkout rechecks current stock. Stock reservation
+and automatic checkout deduction remain separate features.
 
 ## Tech Requirements
 The project requires Java 25. If you have multiple JVMs on your machine, you might want to

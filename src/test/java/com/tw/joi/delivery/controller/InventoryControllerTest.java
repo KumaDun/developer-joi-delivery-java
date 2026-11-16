@@ -3,8 +3,11 @@ package com.tw.joi.delivery.controller;
 import com.tw.joi.delivery.domain.StockStatus;
 import com.tw.joi.delivery.dto.response.InventoryHealthResponse;
 import com.tw.joi.delivery.dto.response.InventoryHealthResponse.ProductHealth;
+import com.tw.joi.delivery.dto.response.InventoryStockResponse;
 import com.tw.joi.delivery.exception.StoreIdDoesNotExistException;
+import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.service.InventoryHealthService;
+import com.tw.joi.delivery.service.InventoryService;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -18,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(InventoryController.class)
@@ -28,6 +33,9 @@ class InventoryControllerTest {
 
     @MockitoBean
     private InventoryHealthService inventoryHealthService;
+
+    @MockitoBean
+    private InventoryService inventoryService;
 
     @Test
     void shouldReturnTheHealthOfTheRequestedStore() throws Exception {
@@ -116,5 +124,70 @@ class InventoryControllerTest {
                         .value("Inventory health is only available for grocery stores"));
 
         verify(inventoryHealthService).getHealth("restaurant101");
+    }
+
+    @Test
+    void shouldSetStockAndReturnUpdatedSnapshot() throws Exception {
+        when(inventoryService.setStock("store101", "product101", 40))
+                .thenReturn(new InventoryStockResponse("store101", "product101", 40));
+
+        mockMvc.perform(put("/inventory/store101/products/product101/stock")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"availableStock\":40}"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"outletId":"store101","productId":"product101","availableStock":40}
+                        """, JsonCompareMode.STRICT));
+
+        verify(inventoryService).setStock("store101", "product101", 40);
+    }
+
+    @Test
+    void shouldAdjustRestaurantStockAndReturnUpdatedSnapshot() throws Exception {
+        when(inventoryService.adjustStock("restaurant101", "meal101", -3))
+                .thenReturn(new InventoryStockResponse("restaurant101", "meal101", 17));
+
+        mockMvc.perform(post("/inventory/restaurant101/products/meal101/stock-adjustments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"delta\":-3}"))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"outletId":"restaurant101","productId":"meal101","availableStock":17}
+                        """, JsonCompareMode.STRICT));
+
+        verify(inventoryService).adjustStock("restaurant101", "meal101", -3);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"availableStock\":null}", "{\"availableStock\":-1}",
+            "{\"availableStock\":2147483648}"})
+    void shouldRejectInvalidSetStockBodyBeforeCallingService(String body) throws Exception {
+        mockMvc.perform(put("/inventory/store101/products/product101/stock")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(inventoryService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"{}", "{\"delta\":null}", "{\"delta\":2147483648}"})
+    void shouldRejectInvalidAdjustmentBodyBeforeCallingService(String body) throws Exception {
+        mockMvc.perform(post("/inventory/store101/products/product101/stock-adjustments")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(inventoryService);
+    }
+
+    @Test
+    void shouldReturnConflictWhenAdjustmentWouldMakeStockNegative() throws Exception {
+        when(inventoryService.adjustStock("store101", "product101", -3))
+                .thenThrow(new InsufficientStockException("product101", 3, 2));
+
+        mockMvc.perform(post("/inventory/store101/products/product101/stock-adjustments")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"delta\":-3}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message")
+                        .value("Requested quantity 3 exceeds available stock 2 for product product101"));
     }
 }

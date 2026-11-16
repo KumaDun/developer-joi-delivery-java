@@ -21,17 +21,20 @@ public class OrderService {
     private final CartService cartService;
     private final ProductService productService;
     private final OrderRepository orderRepository;
+    private final UserService userService;
     private final Clock clock;
 
     public OrderService(
             CartService cartService,
             ProductService productService,
             OrderRepository orderRepository,
+            UserService userService,
             Clock clock
     ) {
         this.cartService = cartService;
         this.productService = productService;
         this.orderRepository = orderRepository;
+        this.userService = userService;
         this.clock = clock;
     }
 
@@ -70,6 +73,16 @@ public class OrderService {
         );
 
         orderRepository.save(order);
+        try {
+            userService.recordLastOrder(userId, order.getOrderId());
+        } catch (RuntimeException exception) {
+            try {
+                orderRepository.deleteById(order.getOrderId());
+            } catch (RuntimeException rollbackFailure) {
+                exception.addSuppressed(rollbackFailure);
+            }
+            throw exception;
+        }
         cart.getCartItems().clear();
 
         return order;
@@ -102,43 +115,40 @@ public class OrderService {
                     item.getProductId(), outletId
             );
 
-            long totalQuantity = Math.addExact(
-                    quantities.getOrDefault(item.getProductId(), 0L),
-                    item.getQuantity()
-            );
+            synchronized (product) {
+                long totalQuantity = Math.addExact(
+                        quantities.getOrDefault(item.getProductId(), 0L),
+                        item.getQuantity()
+                );
 
-            if (totalQuantity > product.getAvailableStock()) {
-                throw new InsufficientStockException(
-                        item.getProductId(), totalQuantity, product.getAvailableStock()
+                int availableStock = product.getAvailableStock();
+                if (totalQuantity > availableStock) {
+                    throw new InsufficientStockException(
+                            item.getProductId(), totalQuantity, availableStock
+                    );
+                }
+
+                quantities.put(item.getProductId(), totalQuantity);
+
+                BigDecimal currentPrice = product.getUnitPrice();
+
+                if (currentPrice == null || currentPrice.signum() < 0) {
+                    throw new IllegalStateException(
+                            "Invalid catalog price for product: " + item.getProductId()
+                    );
+                }
+
+                if (currentPrice.compareTo(item.getUnitPrice()) != 0) {
+                    // TODO update latest price
+                    throw new IllegalStateException(
+                            "Price changed for product: " + item.getProductId()
+                    );
+                }
+
+                acceptedItems.add(
+                        item.copyForOrder(product, currentPrice)
                 );
             }
-
-            quantities.put(item.getProductId(), totalQuantity);
-
-            BigDecimal currentPrice = product.getUnitPrice();
-
-            if (currentPrice == null || currentPrice.signum() < 0) {
-                throw new IllegalStateException(
-                        "Invalid catalog price for product: " + item.getProductId()
-                );
-            }
-
-            if (currentPrice.compareTo(item.getUnitPrice()) != 0) {
-                // TODO update latest price
-                throw new IllegalStateException(
-                        "Price changed for product: " + item.getProductId()
-                );
-            }
-
-            acceptedItems.add(
-                    new CartItem(
-                            product,
-                            item.getQuantity(),
-                            currentPrice,
-                            item.getSpiceLevel(),
-                            item.getUtensilsNeeded()
-                    )
-            );
         }
 
         return acceptedItems;

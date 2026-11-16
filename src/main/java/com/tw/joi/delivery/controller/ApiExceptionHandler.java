@@ -27,7 +27,8 @@ public class ApiExceptionHandler {
             ProductDoesNotExistException.class,
             StoreIdDoesNotExistException.class,
             StoreNameDoesNotExistException.class,
-            OrderDoesNotExistException.class
+            OrderDoesNotExistException.class,
+            CartItemDoesNotExistException.class
     })
     public ResponseEntity<ErrorResponse> handleResourceNotFound(
             RuntimeException exception) {

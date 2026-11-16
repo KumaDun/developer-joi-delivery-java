@@ -11,6 +11,7 @@ import com.tw.joi.delivery.domain.SpiceLevel;
 import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
+import com.tw.joi.delivery.exception.CartItemDoesNotExistException;
 import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.exception.UserDoesNotExistException;
 import com.tw.joi.delivery.repository.CartRepository;
@@ -474,15 +475,246 @@ class CartServiceTest {
         assertSame(item.getProductId().equals("meal101") ? restaurant : store, cart.getOutlet());
     }
 
+    @Test
+    void shouldUpdateOnlySelectedCustomizedLineAndPreserveCapturedValues() {
+        CartItem mild = new CartItem(meal, 2, meal.getUnitPrice(), SpiceLevel.MILD, false);
+        CartItem hot = new CartItem(meal, 1, meal.getUnitPrice(), SpiceLevel.HOT, true);
+        cart.getCartItems().addAll(List.of(mild, hot));
+        cart.setOutlet(restaurant);
+        stubMealLookup();
+        meal.setProductName("New catalog name");
+        meal.setUnitPrice(new BigDecimal("30.00"));
+
+        Cart result = cartService.updateCartItemQuantity("user101", mild.getCartItemId(), 3);
+
+        assertNotEquals(mild.getCartItemId(), hot.getCartItemId());
+        assertNotSame(cart, result);
+        CartItem changed = result.getCartItems().getFirst();
+        assertEquals(mild.getCartItemId(), changed.getCartItemId());
+        assertEquals("Chicken Curry", changed.getProductName());
+        assertEquals(3, changed.getQuantity());
+        assertEquals(new BigDecimal("25.00"), changed.getUnitPrice());
+        assertEquals(new BigDecimal("75.00"), changed.getTotalPrice());
+        assertEquals(SpiceLevel.MILD, changed.getSpiceLevel());
+        assertEquals(Boolean.FALSE, changed.getUtensilsNeeded());
+        assertSame(hot, result.getCartItems().get(1));
+        assertEquals(SpiceLevel.HOT, hot.getSpiceLevel());
+        assertEquals(Boolean.TRUE, hot.getUtensilsNeeded());
+        assertEquals(2, mild.getQuantity());
+        assertEquals(5, meal.getAvailableStock());
+        assertThrows(UnsupportedOperationException.class, () -> result.getCartItems().clear());
+
+        cartService.updateCartItemQuantity("user101", mild.getCartItemId(), 1);
+        assertEquals(3, result.getCartItems().getFirst().getQuantity());
+    }
+
+    @Test
+    void shouldSetAbsoluteQuantityAndTreatSameQuantityRetryAsNoOp() {
+        CartItem original = new CartItem(product, 2);
+        cart.getCartItems().add(original);
+        cart.setOutlet(store);
+        stubProductLookup();
+
+        Cart increased = cartService.updateCartItemQuantity("user101", original.getCartItemId(), 3);
+        CartItem updated = increased.getCartItems().getFirst();
+        clearInvocations(productService);
+
+        Cart retry = cartService.updateCartItemQuantity("user101", original.getCartItemId(), 3);
+        Cart decreased = cartService.updateCartItemQuantity("user101", original.getCartItemId(), 1);
+
+        assertSame(updated, retry.getCartItems().getFirst());
+        assertEquals(3, retry.getCartItems().getFirst().getQuantity());
+        assertEquals(1, decreased.getCartItems().getFirst().getQuantity());
+        assertEquals(original.getCartItemId(), decreased.getCartItems().getFirst().getCartItemId());
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    void shouldRemoveOnlySelectedLineAndClearOutletAfterLastRemoval() {
+        CartItem first = new CartItem(product, 2);
+        CartItem second = new CartItem(product, 1);
+        cart.getCartItems().addAll(List.of(first, second));
+        cart.setOutlet(store);
+
+        Cart oneLeft = cartService.updateCartItemQuantity("user101", first.getCartItemId(), 0);
+        Cart empty = cartService.updateCartItemQuantity("user101", second.getCartItemId(), 0);
+
+        assertEquals(List.of(second), oneLeft.getCartItems());
+        assertSame(store, oneLeft.getOutlet());
+        assertTrue(empty.getCartItems().isEmpty());
+        assertNull(empty.getOutlet());
+        assertTrue(cart.getCartItems().isEmpty());
+        assertNull(cart.getOutlet());
+        assertThrows(CartItemDoesNotExistException.class,
+                () -> cartService.updateCartItemQuantity("user101", second.getCartItemId(), 0));
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    void shouldRejectNegativeQuantityOrUnknownItemWithoutChangingCart() {
+        CartItem original = new CartItem(product, 2);
+        cart.getCartItems().add(original);
+        cart.setOutlet(store);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> cartService.updateCartItemQuantity("user101", original.getCartItemId(), -1));
+        assertThrows(CartItemDoesNotExistException.class,
+                () -> cartService.updateCartItemQuantity("user101", "missing-item", 3));
+
+        assertEquals(List.of(original), cart.getCartItems());
+        assertSame(store, cart.getOutlet());
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    void shouldNotUpdateAnotherUsersItem() {
+        CartItem original = new CartItem(product, 2);
+        cart.getCartItems().add(original);
+        cart.setOutlet(store);
+        User otherUser = User.builder().userId("user102").build();
+        when(userService.fetchUserById("user102")).thenReturn(otherUser);
+
+        assertThrows(CartItemDoesNotExistException.class,
+                () -> cartService.updateCartItemQuantity("user102", original.getCartItemId(), 3));
+
+        assertEquals(List.of(original), cart.getCartItems());
+        assertSame(store, cart.getOutlet());
+        Cart otherCart = cartRepository.getOrCreateForUser(otherUser);
+        assertTrue(otherCart.getCartItems().isEmpty());
+        assertNull(otherCart.getOutlet());
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    void shouldRejectIncreaseExceedingStockAcrossCustomizationLines() {
+        CartItem mild = new CartItem(meal, 3, meal.getUnitPrice(), SpiceLevel.MILD, false);
+        CartItem hot = new CartItem(meal, 2, meal.getUnitPrice(), SpiceLevel.HOT, true);
+        cart.getCartItems().addAll(List.of(mild, hot));
+        cart.setOutlet(restaurant);
+        stubMealLookup();
+
+        InsufficientStockException failure = assertThrows(InsufficientStockException.class,
+                () -> cartService.updateCartItemQuantity("user101", mild.getCartItemId(), 4));
+
+        assertEquals("Requested quantity 6 exceeds available stock 5 for product meal101", failure.getMessage());
+        assertEquals(List.of(mild, hot), cart.getCartItems());
+        assertSame(restaurant, cart.getOutlet());
+        assertEquals(5, meal.getAvailableStock());
+    }
+
+    @Test
+    void shouldPermitDecreaseAndRemovalWithoutCatalogLookupAfterStockDrops() {
+        CartItem first = new CartItem(product, 3);
+        CartItem second = new CartItem(product, 2);
+        cart.getCartItems().addAll(List.of(first, second));
+        cart.setOutlet(store);
+        product.setAvailableStock(0);
+        when(productService.getProduct("product101", "store101"))
+                .thenThrow(new ProductDoesNotExistException("product101", "store101"));
+
+        Cart decreased = cartService.updateCartItemQuantity("user101", first.getCartItemId(), 2);
+        Cart removed = cartService.updateCartItemQuantity("user101", first.getCartItemId(), 0);
+
+        assertEquals(4, decreased.getCartItems().stream().mapToInt(CartItem::getQuantity).sum());
+        assertEquals(first.getCartItemId(), decreased.getCartItems().getFirst().getCartItemId());
+        assertEquals(List.of(second), removed.getCartItems());
+        assertSame(store, removed.getOutlet());
+        verifyNoInteractions(productService);
+    }
+
+    @Test
+    void shouldPreserveCartWhenIncreaseCannotFindCatalogProduct() {
+        CartItem original = new CartItem(product, 1);
+        cart.getCartItems().add(original);
+        cart.setOutlet(store);
+        when(productService.getProduct("product101", "store101"))
+                .thenThrow(new ProductDoesNotExistException("product101", "store101"));
+
+        assertThrows(ProductDoesNotExistException.class,
+                () -> cartService.updateCartItemQuantity("user101", original.getCartItemId(), 2));
+
+        assertEquals(List.of(original), cart.getCartItems());
+        assertSame(store, cart.getOutlet());
+    }
+
+    @Test
+    void shouldRejectIncreaseWhenProductBelongsToAnotherOutlet() {
+        CartItem original = new CartItem(product, 1);
+        cart.getCartItems().add(original);
+        cart.setOutlet(store);
+        product.setOutlet(GroceryStore.builder().outletId("store102").build());
+        stubProductLookup();
+
+        assertThrows(IllegalArgumentException.class,
+                () -> cartService.updateCartItemQuantity("user101", original.getCartItemId(), 2));
+
+        assertEquals(List.of(original), cart.getCartItems());
+        assertSame(store, cart.getOutlet());
+    }
+
+    @Test
+    void shouldRejectLargeAggregateIncreaseWithoutIntegerOverflow() {
+        product.setAvailableStock(Integer.MAX_VALUE);
+        CartItem first = new CartItem(product, Integer.MAX_VALUE - 1);
+        CartItem second = new CartItem(product, 1);
+        cart.getCartItems().addAll(List.of(first, second));
+        cart.setOutlet(store);
+        stubProductLookup();
+
+        InsufficientStockException failure = assertThrows(InsufficientStockException.class,
+                () -> cartService.updateCartItemQuantity("user101", second.getCartItemId(), Integer.MAX_VALUE));
+
+        long total = (long) Integer.MAX_VALUE - 1 + Integer.MAX_VALUE;
+        assertTrue(failure.getMessage().contains(Long.toString(total)));
+        assertEquals(List.of(first, second), cart.getCartItems());
+    }
+
+    @Test
+    void shouldCoordinateConcurrentQuantityIncreasesWithBothLocksAndCombinedStock() throws Exception {
+        CartItem first = new CartItem(product, 1);
+        CartItem second = new CartItem(product, 1);
+        cart.getCartItems().addAll(List.of(first, second));
+        cart.setOutlet(store);
+        GroceryProduct lockedProduct = spy(product);
+        when(productService.getProduct("product101", "store101")).thenAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart));
+            return lockedProduct;
+        });
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart));
+            assertTrue(Thread.holdsLock(lockedProduct));
+            return invocation.callRealMethod();
+        }).when(lockedProduct).getAvailableStock();
+
+        List<RuntimeException> failures = attemptConcurrently(
+                () -> cartService.updateCartItemQuantity("user101", first.getCartItemId(), 3),
+                () -> cartService.updateCartItemQuantity("user101", second.getCartItemId(), 3));
+
+        assertEquals(1, failures.size());
+        assertInstanceOf(InsufficientStockException.class, failures.getFirst());
+        assertEquals(List.of(1, 3), cart.getCartItems().stream().map(CartItem::getQuantity).sorted().toList());
+        assertEquals(first.getCartItemId(), cart.getCartItems().getFirst().getCartItemId());
+        assertEquals(second.getCartItemId(), cart.getCartItems().get(1).getCartItemId());
+        assertEquals(1, first.getQuantity());
+        assertEquals(1, second.getQuantity());
+        assertSame(store, cart.getOutlet());
+    }
+
     private List<RuntimeException> attemptConcurrently(
             AddProductRequest first, AddProductRequest second) throws Exception {
+        return attemptConcurrently(
+                () -> cartService.addProductToCartForUser(first),
+                () -> cartService.addProductToCartForUser(second));
+    }
+
+    private List<RuntimeException> attemptConcurrently(Runnable first, Runnable second) throws Exception {
         ExecutorService executor = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
         try {
             List<Future<RuntimeException>> results = List.of(
-                    executor.submit(() -> attemptAdd(first, ready, start)),
-                    executor.submit(() -> attemptAdd(second, ready, start)));
+                    executor.submit(() -> attemptOperation(first, ready, start)),
+                    executor.submit(() -> attemptOperation(second, ready, start)));
             assertTrue(ready.await(5, TimeUnit.SECONDS));
             start.countDown();
             List<RuntimeException> failures = new ArrayList<>();
@@ -500,12 +732,12 @@ class CartServiceTest {
         }
     }
 
-    private RuntimeException attemptAdd(AddProductRequest request,
-                                        CountDownLatch ready, CountDownLatch start) throws Exception {
+    private RuntimeException attemptOperation(Runnable operation,
+                                             CountDownLatch ready, CountDownLatch start) throws Exception {
         ready.countDown();
         assertTrue(start.await(5, TimeUnit.SECONDS));
         try {
-            cartService.addProductToCartForUser(request);
+            operation.run();
             return null;
         } catch (RuntimeException exception) {
             return exception;
@@ -514,6 +746,21 @@ class CartServiceTest {
 
     private void stubMealLookup() {
         when(productService.getProduct("meal101", "restaurant101")).thenReturn(meal);
+    }
+
+    @Test
+    void shouldReadInventoryUnderTheSameProductLockAsStockUpdates() {
+        GroceryProduct lockedProduct = spy(product);
+        when(productService.getProduct("product101", "store101")).thenReturn(lockedProduct);
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(lockedProduct));
+            assertTrue(Thread.holdsLock(cart));
+            return invocation.callRealMethod();
+        }).when(lockedProduct).getAvailableStock();
+
+        CartItem item = cartService.addProductToCartForUser(request(2));
+
+        assertEquals(2, item.getQuantity());
     }
 
     private AddProductRequest mealRequest(int quantity) {

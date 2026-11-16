@@ -63,6 +63,8 @@ class CartItemTest {
         CartItem customized = new CartItem(meal, 2, meal.getUnitPrice(), spiceLevel, true);
         CartItem standard = new CartItem(meal, 1);
 
+        assertNotEquals(customized.getCartItemId(), standard.getCartItemId());
+        assertEquals(customized.getCartItemId(), java.util.UUID.fromString(customized.getCartItemId()).toString());
         assertEquals(spiceLevel, customized.getSpiceLevel());
         assertEquals(Boolean.TRUE, customized.getUtensilsNeeded());
         assertEquals(new BigDecimal("50.00"), customized.getTotalPrice());
@@ -102,6 +104,62 @@ class CartItemTest {
 
         assertNull(item.getSpiceLevel());
         assertNull(item.getUtensilsNeeded());
+    }
+
+    @ParameterizedTest
+    @EnumSource(SpiceLevel.class)
+    void shouldPreserveIdentityAndMealSelectionsWhenQuantityChanges(SpiceLevel spiceLevel) {
+        FoodProduct meal = meal();
+        CartItem original = new CartItem(meal, 2, meal.getUnitPrice(), spiceLevel, true);
+        meal.setProductName("Changed catalog name");
+        meal.setUnitPrice(new BigDecimal("99.00"));
+
+        CartItem updated = original.withQuantity(3);
+
+        assertNotSame(original, updated);
+        assertEquals(original.getCartItemId(), updated.getCartItemId());
+        assertEquals("meal101", updated.getProductId());
+        assertEquals("Chicken Curry", updated.getProductName());
+        assertEquals(new BigDecimal("25.00"), updated.getUnitPrice());
+        assertEquals(new BigDecimal("75.00"), updated.getTotalPrice());
+        assertEquals(spiceLevel, updated.getSpiceLevel());
+        assertEquals(Boolean.TRUE, updated.getUtensilsNeeded());
+        assertEquals(2, original.getQuantity());
+        assertEquals(new BigDecimal("50.00"), original.getTotalPrice());
+    }
+
+    @Test
+    void shouldPreserveGroceryIdentityWithoutIntroducingMealOptions() {
+        CartItem original = new CartItem(product(), 2, BigDecimal.ONE);
+
+        CartItem updated = original.withQuantity(1);
+
+        assertEquals(original.getCartItemId(), updated.getCartItemId());
+        assertEquals(1, updated.getQuantity());
+        assertNull(updated.getSpiceLevel());
+        assertNull(updated.getUtensilsNeeded());
+        assertThrows(IllegalArgumentException.class, () -> original.withQuantity(0));
+        assertThrows(IllegalArgumentException.class, () -> original.withQuantity(-1));
+        assertEquals(2, original.getQuantity());
+    }
+
+    @Test
+    void shouldPreserveIdentityAndCustomizationInOrderCopy() {
+        FoodProduct meal = meal();
+        CartItem original = new CartItem(meal, 2, meal.getUnitPrice(), SpiceLevel.HOT, false);
+
+        CartItem copied = original.copyForOrder(meal, meal.getUnitPrice());
+
+        assertNotSame(original, copied);
+        assertEquals(original.getCartItemId(), copied.getCartItemId());
+        assertEquals(SpiceLevel.HOT, copied.getSpiceLevel());
+        assertEquals(Boolean.FALSE, copied.getUtensilsNeeded());
+        assertEquals(original.getQuantity(), copied.getQuantity());
+        assertEquals(original.getTotalPrice(), copied.getTotalPrice());
+
+        FoodProduct other = meal();
+        other.setProductId("meal102");
+        assertThrows(IllegalArgumentException.class, () -> original.copyForOrder(other, BigDecimal.ONE));
     }
 
     private FoodProduct meal() {

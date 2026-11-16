@@ -39,12 +39,16 @@ class CartIntegrationTest {
     private Cart cart;
     private List<CartItem> originalItems;
     private Outlet<?> originalOutlet;
+    private String originalLastOrderId;
 
     @BeforeEach
     void setUp() {
         cart = cartRepository.getOrCreateForUser(SeedData.user101);
         originalItems = cart.getCartItems();
         originalOutlet = cart.getOutlet();
+        synchronized (cart.getUser()) {
+            originalLastOrderId = cart.getUser().getLastOrderId();
+        }
         cart.setCartItems(new ArrayList<>());
         cart.setOutlet(null);
     }
@@ -53,6 +57,9 @@ class CartIntegrationTest {
     void restoreCart() {
         cart.setCartItems(originalItems);
         cart.setOutlet(originalOutlet);
+        synchronized (cart.getUser()) {
+            cart.getUser().setLastOrderId(originalLastOrderId);
+        }
     }
 
     @Test

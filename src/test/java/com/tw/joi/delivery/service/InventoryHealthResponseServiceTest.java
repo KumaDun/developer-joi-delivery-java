@@ -16,6 +16,8 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 class InventoryHealthResponseServiceTest {
 
@@ -141,6 +143,24 @@ class InventoryHealthResponseServiceTest {
 
     private GroceryStore store(String id) {
         return GroceryStore.builder().outletId(id).name("Store " + id).build();
+    }
+
+    @Test
+    void shouldReadHealthValuesUnderTheProductLock() {
+        GroceryStore store = store("store-a");
+        GroceryProduct product = spy(product("product-a", 2, 10));
+        store.addProduct(product);
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(product));
+            return invocation.callRealMethod();
+        }).when(product).getAvailableStock();
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(product));
+            return invocation.callRealMethod();
+        }).when(product).getThreshold();
+
+        assertEquals(StockStatus.LOW_STOCK, service(store).getHealth("store-a")
+                .products().getFirst().status());
     }
 
     private GroceryProduct product(String id, int stock, int threshold) {

@@ -13,6 +13,8 @@ import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.SpiceLevel;
 import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
+import com.tw.joi.delivery.exception.CartItemDoesNotExistException;
+import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.exception.UserDoesNotExistException;
 import com.tw.joi.delivery.service.CartService;
@@ -97,6 +99,8 @@ public class CartControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItemId")
+                        .value(item.getCartItemId()))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.productId")
                         .value("product101"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.productName")
@@ -251,6 +255,8 @@ public class CartControllerTest {
                         .value("cart101"))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].productId")
                         .value("product101"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].cartItemId")
+                        .value(item.getCartItemId()))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].quantity")
                         .value(2))
                 .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].unitPrice")
@@ -271,5 +277,98 @@ public class CartControllerTest {
                         .doesNotExist());
 
         verify(cartService).getCartSnapshotForUser("user101");
+    }
+
+    @Test
+    void shouldBindQuantityUpdateAndReturnCartSnapshot() throws Exception {
+        FoodProduct meal = FoodProduct.builder()
+                .productId("meal101").productName("Chicken Curry")
+                .unitPrice(new BigDecimal("25.00")).build();
+        CartItem item = new CartItem(meal, 3, meal.getUnitPrice(), SpiceLevel.HOT, true);
+        Cart snapshot = Cart.builder().cartId("cart101").cartItems(List.of(item)).build();
+        when(cartService.updateCartItemQuantity("user101", item.getCartItemId(), 3))
+                .thenReturn(snapshot);
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/{cartItemId}", item.getCartItemId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"user101\",\"quantity\":3}"))
+                .andExpect(status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartId").value("cart101"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].cartItemId")
+                        .value(item.getCartItemId()))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].quantity").value(3))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].totalPrice").value(75.0))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].spiceLevel").value("HOT"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].utensilsNeeded").value(true));
+
+        verify(cartService).updateCartItemQuantity("user101", item.getCartItemId(), 3);
+    }
+
+    @Test
+    void shouldAllowZeroQuantityToReachRemovalLogic() throws Exception {
+        when(cartService.updateCartItemQuantity("user101", "item101", 0))
+                .thenReturn(Cart.builder().cartId("cart101").build());
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/item101")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"user101\",\"quantity\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems").isEmpty());
+
+        verify(cartService).updateCartItemQuantity("user101", "item101", 0);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "{\"userId\":\"user101\",\"quantity\":-1}",
+            "{\"userId\":\"user101\"}",
+            "{\"userId\":\"user101\",\"quantity\":null}",
+            "{\"quantity\":1}",
+            "{\"userId\":\"\",\"quantity\":1}",
+            "{\"userId\":\" \",\"quantity\":1}"
+    })
+    void shouldRejectInvalidQuantityUpdateWithoutCallingService(String body) throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/item101")
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(cartService);
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenUpdatingUnknownItem() throws Exception {
+        when(cartService.updateCartItemQuantity("user101", "missing", 2))
+                .thenThrow(new CartItemDoesNotExistException("missing"));
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/missing")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"user101\",\"quantity\":2}"))
+                .andExpect(status().isNotFound())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.message")
+                        .value("Cart item: missing does not exist"));
+    }
+
+    @Test
+    void shouldReturnNotFoundWhenUpdatingUnknownUsersCart() throws Exception {
+        when(cartService.updateCartItemQuantity("missing", "item101", 2))
+                .thenThrow(new UserDoesNotExistException("missing"));
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/item101")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"missing\",\"quantity\":2}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void shouldReturnConflictWhenUpdatedQuantityExceedsStock() throws Exception {
+        when(cartService.updateCartItemQuantity("user101", "item101", 20))
+                .thenThrow(new InsufficientStockException("meal101", 21, 20));
+
+        mockMvc.perform(MockMvcRequestBuilders.patch("/cart/items/item101")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userId\":\"user101\",\"quantity\":20}"))
+                .andExpect(status().isConflict())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.message")
+                        .value("Requested quantity 21 exceeds available stock 20 for product meal101"));
     }
 }

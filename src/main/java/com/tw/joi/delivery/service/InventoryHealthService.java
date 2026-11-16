@@ -38,6 +38,12 @@ public class InventoryHealthService {
     }
 
     private ProductHealth getProductHealth(GroceryProduct product) {
+        synchronized (product) {
+            return readProductHealth(product);
+        }
+    }
+
+    private ProductHealth readProductHealth(GroceryProduct product) {
         String productId = product.getProductId();
         String productName = product.getProductName();
         int stock = product.getAvailableStock();

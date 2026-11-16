@@ -23,4 +23,7 @@ public class User {
     @JsonIgnore
     private Cart cart;
 
+    @JsonIgnore
+    private volatile String lastOrderId;
+
 }

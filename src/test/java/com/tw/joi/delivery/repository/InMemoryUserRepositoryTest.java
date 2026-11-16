@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -74,6 +77,36 @@ class InMemoryUserRepositoryTest {
                 () -> result.clear()
         );
 
+        assertEquals(2, repository.findAll().size());
+    }
+
+    @Test
+    void shouldSaveNewUsersAndHistoryWithoutChangingExistingSnapshotsOrOtherRepositories() {
+        Collection<User> original = repository.findAll();
+        User added = User.builder().userId("user103").lastOrderId("order103").build();
+
+        repository.save(added);
+
+        assertSame(added, repository.findById("user103").orElseThrow());
+        assertEquals("order103", repository.findById("user103").orElseThrow().getLastOrderId());
+        assertEquals(2, original.size());
+        assertEquals(3, repository.findAll().size());
+        assertTrue(new InMemoryUserRepository(List.of()).findById("user103").isEmpty());
+    }
+
+    @Test
+    void shouldRejectNullUser() {
+        assertThrows(IllegalArgumentException.class, () -> repository.save(null));
+        assertEquals(2, repository.findAll().size());
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    void shouldRejectMissingUserId(String userId) {
+        assertThrows(IllegalArgumentException.class,
+                () -> repository.save(User.builder().userId(userId).build()));
+        assertThrows(IllegalArgumentException.class, () -> repository.findById(userId));
         assertEquals(2, repository.findAll().size());
     }
 }
