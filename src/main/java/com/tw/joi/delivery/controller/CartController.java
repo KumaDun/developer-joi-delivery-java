@@ -1,8 +1,8 @@
 package com.tw.joi.delivery.controller;
 
+import com.tw.joi.delivery.domain.Cart;
+import com.tw.joi.delivery.domain.CartItem;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
-import com.tw.joi.delivery.dto.response.CartInfo;
-import com.tw.joi.delivery.dto.response.CartProductInfo;
 import com.tw.joi.delivery.service.CartService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -18,12 +18,15 @@ public class CartController {
     private final CartService cartService;
 
     @PostMapping("/product")
-    public ResponseEntity<CartProductInfo> addProductToCart(@Valid @RequestBody AddProductRequest addProductRequest) {
+    public ResponseEntity<CartItem> addProductToCart(@Valid @RequestBody AddProductRequest addProductRequest) {
         return ResponseEntity.ok(cartService.addProductToCartForUser(addProductRequest));
     }
 
     @GetMapping("/view")
-    public ResponseEntity<CartInfo> viewCart(@RequestParam(name = "userId") @NotBlank String userId) {
-        return ResponseEntity.ok(cartService.getCartInfoForUser(userId));
+    public ResponseEntity<Cart> viewCart(@RequestParam(name = "userId") @NotBlank String userId) {
+        return ResponseEntity.ok(cartService.getCartForUser(userId));
     }
+
+    // TODO delete product from cart
+    // TODO change quantity of product
 }

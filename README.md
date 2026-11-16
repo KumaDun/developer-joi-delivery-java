@@ -59,121 +59,47 @@ POST /cart/product
 Content-Type: application/json
 ```
 
-Request Body
+Request Body (`quantity` must be greater than zero)
 ```json
 {
   "userId": "user101",
   "productId": "product101",
-  "outletId": "store101"
+  "outletId": "store101",
+  "quantity": 2
 }
 ```
 
-Response Body
+Returns the added `CartItem` directly with HTTP 200. Example for a unit price of 10.50:
 ```json
 {
-	"cart": {
-		"cartId": "cart101",
-		"outlet": {
-			"name": "Fresh Picks",
-			"description": null,
-			"outletId": "store101",
-			"inventory": []
-		},
-		"products": [
-			{
-				"productId": "product101",
-				"productName": "Wheat Bread",
-				"mrp": 10.5,
-				"sellingPrice": null,
-				"weight": 500.0,
-				"expiryDate": 0,
-				"threshold": 10,
-				"availableStock": 30,
-				"discount": null,
-				"store": {
-					"name": "Fresh Picks",
-					"description": null,
-					"outletId": "store101",
-					"inventory": []
-				}
-			}
-		],
-		"user": {
-			"userId": "user101",
-			"username": null,
-			"firstName": "John",
-			"lastName": "Doe",
-			"email": "John.Doe@gmail.com",
-			"phoneNumber": "519898286",
-			"cart": null
-		}
-	},
-	"product": {
-		"productId": "product101",
-		"productName": "Wheat Bread",
-		"mrp": 10.5,
-		"sellingPrice": null,
-		"weight": 500.0,
-		"expiryDate": 0,
-		"threshold": 10,
-		"availableStock": 30,
-		"discount": null,
-		"store": {
-			"name": "Fresh Picks",
-			"description": null,
-			"outletId": "store101",
-			"inventory": []
-		}
-	},
-	"sellingPrice": null
+  "productId": "product101",
+  "productName": "Wheat Bread",
+  "quantity": 2,
+  "unitPrice": 10.50,
+  "totalPrice": 21.00
 }
 ```
+
+Adding a product checks the combined quantity already in the cart against available stock.
+It does not reserve or decrease stock. Each successful addition creates a cart item;
+its response contains the quantity from that addition.
 
 ### View Cart
 ```http
 GET /cart/view?userId=user101
 ```
 
-Response Body
-```json
-{
-	"cartId": "cart101",
-	"outlet": {
-		"name": "Fresh Picks",
-		"description": null,
-		"outletId": "store101",
-		"inventory": []
-	},
-	"products": [
-		{
-			"productId": "product101",
-			"productName": "Wheat Bread",
-			"mrp": 10.5,
-			"sellingPrice": null,
-			"weight": 500.0,
-			"expiryDate": 0,
-			"threshold": 10,
-			"availableStock": 30,
-			"discount": null,
-			"store": {
-				"name": "Fresh Picks",
-				"description": null,
-				"outletId": "store101",
-				"inventory": []
-			}
-		}
-	],
-	"user": {
-		"userId": "user101",
-		"username": null,
-		"firstName": "John",
-		"lastName": "Doe",
-		"email": "John.Doe@gmail.com",
-		"phoneNumber": "519898286",
-		"cart": null
-	}
-}
-```
+Returns the complete `Cart` directly with HTTP 200:
+
+| Field | Contents |
+|-------|----------|
+| `cartId` | Cart identifier |
+| `outlet` | Store or restaurant, including inventory where exposed by the outlet |
+| `cartItems` | Items with the same fields as the add-product response above |
+| `user` | Cart owner; the user's cart back-reference is omitted |
+
+Cart items retain their captured names and unit prices. Viewing a cart does not
+look up its items again in the product catalog.
 
 ### Inventory Health
 ```http

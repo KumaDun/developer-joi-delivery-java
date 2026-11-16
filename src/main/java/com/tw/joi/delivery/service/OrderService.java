@@ -114,6 +114,7 @@ public class OrderService {
             }
 
             if (currentPrice.compareTo(item.getUnitPrice()) != 0) {
+                // TODO update latest price
                 throw new IllegalStateException(
                         "Price changed for product: " + item.getProductId()
                 );

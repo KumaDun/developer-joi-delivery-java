@@ -4,7 +4,6 @@ import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.domain.CartItem;
 import com.tw.joi.delivery.domain.GroceryProduct;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
-import com.tw.joi.delivery.dto.response.CartProductInfo;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.seedData.SeedData;
 import java.math.BigDecimal;
@@ -60,36 +59,19 @@ class CartServiceTest {
     void shouldAddProductWithRequestedQuantityAndReturnDetails() {
         stubProductLookup();
 
-        CartProductInfo result =
+        CartItem result =
                 cartService.addProductToCartForUser(request(2));
 
         // Verify the actual cart was updated.
         assertEquals(1, cart.getCartItems().size());
 
         CartItem item = cart.getCartItems().getFirst();
+        assertSame(item, result);
         assertEquals("product101", item.getProductId());
+        assertEquals("Wheat Bread", item.getProductName());
         assertEquals(2, item.getQuantity());
         assertEquals(new BigDecimal("10.50"), item.getUnitPrice());
         assertEquals(new BigDecimal("21.00"), item.getTotalPrice());
-
-        // Verify the returned cart DTO.
-        assertEquals(cart.getCartId(), result.cart().cartId());
-        assertEquals("store101", result.cart().outlet().outletId());
-        assertEquals("user101", result.cart().user().userId());
-        assertEquals(1, result.cart().products().size());
-
-        var returnedItem = result.cart().products().getFirst();
-
-        assertEquals("product101", returnedItem.product().productId());
-        assertEquals("Wheat Bread", returnedItem.product().productName());
-        assertEquals(2, returnedItem.quantity());
-        assertEquals(new BigDecimal("10.50"), returnedItem.unitPrice());
-        assertEquals(new BigDecimal("21.00"), returnedItem.totalPrice());
-
-        // Verify the separate top-level product and price.
-        assertEquals("product101", result.product().productId());
-        assertEquals("Wheat Bread", result.product().productName());
-        assertEquals(new BigDecimal("10.50"), result.sellingPrice());
 
         // Adding to a cart does not reserve stock.
         assertEquals(5, product.getAvailableStock());
@@ -211,27 +193,26 @@ class CartServiceTest {
     }
 
     @Test
-    void shouldReturnCartInfoWithQuantityAndPrices() {
-        stubProductLookup();
-
+    void shouldReturnCartWithQuantityAndPricesWithoutCatalogLookups() {
         cart.getCartItems().add(new CartItem(product, 2));
 
-        var result = cartService.getCartInfoForUser("user101");
+        Cart result = cartService.getCartForUser("user101");
 
-        assertEquals("cart101", result.cartId());
-        assertEquals("store101", result.outlet().outletId());
-        assertEquals("user101", result.user().userId());
-        assertEquals(1, result.products().size());
+        assertEquals("cart101", result.getCartId());
+        assertEquals("store101", result.getOutlet().getOutletId());
+        assertEquals("user101", result.getUser().getUserId());
+        assertEquals(1, result.getCartItems().size());
 
-        var returnedItem = result.products().getFirst();
+        CartItem returnedItem = result.getCartItems().getFirst();
 
-        assertEquals("product101", returnedItem.product().productId());
-        assertEquals(2, returnedItem.quantity());
-        assertEquals(new BigDecimal("10.50"), returnedItem.unitPrice());
-        assertEquals(new BigDecimal("21.00"), returnedItem.totalPrice());
+        assertEquals("product101", returnedItem.getProductId());
+        assertEquals(2, returnedItem.getQuantity());
+        assertEquals(new BigDecimal("10.50"), returnedItem.getUnitPrice());
+        assertEquals(new BigDecimal("21.00"), returnedItem.getTotalPrice());
 
         assertEquals(1, cart.getCartItems().size());
         assertEquals(5, product.getAvailableStock());
+        verifyNoInteractions(productService);
     }
 
     private AddProductRequest request(int quantity) {

@@ -5,14 +5,15 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.tw.joi.delivery.domain.*;
+import com.tw.joi.delivery.domain.Cart;
+import com.tw.joi.delivery.domain.CartItem;
+import com.tw.joi.delivery.domain.GroceryProduct;
+import com.tw.joi.delivery.domain.GroceryStore;
+import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
-import com.tw.joi.delivery.dto.response.CartInfo;
-import com.tw.joi.delivery.dto.response.CartProductInfo;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.exception.UserDoesNotExistException;
 import com.tw.joi.delivery.service.CartService;
-import com.tw.joi.delivery.service.ProductService;
 import org.hamcrest.core.Is;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,9 +35,6 @@ public class CartControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
-
-    @MockitoBean
-    private ProductService productService;
 
     @MockitoBean
     private CartService cartService;
@@ -64,14 +62,14 @@ public class CartControllerTest {
     void shouldReturnNotFoundWhenUserDoesNotExist() throws Exception {
         String userId = "missing";
 
-        when(cartService.getCartInfoForUser(userId))
+        when(cartService.getCartForUser(userId))
                 .thenThrow(new UserDoesNotExistException(userId));
 
         mockMvc.perform(MockMvcRequestBuilders.get("/cart/view")
                         .param("userId", userId))
                 .andExpect(status().isNotFound());
 
-        verify(cartService).getCartInfoForUser(userId);
+        verify(cartService).getCartForUser(userId);
     }
 
     @Test
@@ -90,44 +88,27 @@ public class CartControllerTest {
 
         CartItem item = new CartItem(product, 2);
 
-        CartInfo cartInfo = new CartInfo(
-                "cart101",
-                null,
-                List.of(CartInfo.CartItemInfo.from(item, product)),
-                null
-        );
-
-        CartProductInfo response = new CartProductInfo(
-                cartInfo,
-                CartInfo.ProductInfo.from(product),
-                new BigDecimal("10.50")
-        );
-
         when(cartService.addProductToCartForUser(any(AddProductRequest.class)))
-                .thenReturn(response);
+                .thenReturn(item);
 
         mockMvc.perform(MockMvcRequestBuilders.post("/cart/product")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
-                .andExpect(MockMvcResultMatchers.jsonPath("$.cart.cartId")
-                        .value("cart101"))
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.products[0].productId").value("product101"))
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.products[0].quantity").value(2))
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.products[0].unitPrice").value(10.5))
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.products[0].totalPrice").value(21.0))
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.products[0].product").doesNotExist())
-                .andExpect(MockMvcResultMatchers.jsonPath(
-                        "$.cart.cartItems").doesNotExist())
-                .andExpect(MockMvcResultMatchers.jsonPath("$.product.productId")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.productId")
                         .value("product101"))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.sellingPrice")
-                        .value(10.5));
+                .andExpect(MockMvcResultMatchers.jsonPath("$.productName")
+                        .value("Wheat Bread"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.quantity")
+                        .value(2))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.unitPrice")
+                        .value(10.5))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.totalPrice")
+                        .value(21.0))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cart")
+                        .doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.product")
+                        .doesNotExist());
 
         ArgumentCaptor<AddProductRequest> captor =
                 ArgumentCaptor.forClass(AddProductRequest.class);
@@ -146,12 +127,10 @@ public class CartControllerTest {
     void shouldReturnTheCart() throws Exception {
         String url = "/cart/view?userId={userId}";
         String userId="user101";
-        CartInfo cartInfo = new CartInfo(
-                "cart101", null, List.of(), null
-        );
+        Cart cart = Cart.builder().cartId("cart101").build();
 
-        when(cartService.getCartInfoForUser(userId))
-                .thenReturn(cartInfo);
+        when(cartService.getCartForUser(userId))
+                .thenReturn(cart);
 
         mockMvc.perform(MockMvcRequestBuilders.get(url,"user101")
                             .contentType(MediaType.APPLICATION_JSON))
@@ -178,7 +157,7 @@ public class CartControllerTest {
     }
 
     @Test
-    void shouldReturnCartProductsWithQuantityAndPrices() throws Exception {
+    void shouldReturnCartItemsWithoutFollowingBackReferences() throws Exception {
         GroceryProduct product = GroceryProduct.builder()
                 .productId("product101")
                 .productName("Wheat Bread")
@@ -187,32 +166,50 @@ public class CartControllerTest {
 
         CartItem item = new CartItem(product, 2);
 
-        CartInfo cartInfo = new CartInfo(
-                "cart101",
-                null,
-                List.of(CartInfo.CartItemInfo.from(item, product)),
-                null
-        );
+        GroceryStore store = GroceryStore.builder()
+                .outletId("store101")
+                .name("Fresh Picks")
+                .build();
+        store.addProduct(product);
 
-        when(cartService.getCartInfoForUser("user101"))
-                .thenReturn(cartInfo);
+        User user = User.builder().userId("user101").build();
+        Cart cart = Cart.builder()
+                .cartId("cart101")
+                .outlet(store)
+                .cartItems(List.of(item))
+                .user(user)
+                .build();
+        user.setCart(cart);
+
+        when(cartService.getCartForUser("user101"))
+                .thenReturn(cart);
 
         mockMvc.perform(MockMvcRequestBuilders.get("/cart/view")
                         .param("userId", "user101"))
                 .andExpect(status().isOk())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.cartId")
                         .value("cart101"))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.products[0].productId")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].productId")
                         .value("product101"))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.products[0].quantity")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].quantity")
                         .value(2))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.products[0].unitPrice")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].unitPrice")
                         .value(10.5))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.products[0].totalPrice")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems[0].totalPrice")
                         .value(21.0))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.cartItems")
+                .andExpect(MockMvcResultMatchers.jsonPath("$.outlet.inventory[0].productId")
+                        .value("product101"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.outlet.inventory[0].outlet")
+                        .doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.outlet.inventory[0].store")
+                        .doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.user.userId")
+                        .value("user101"))
+                .andExpect(MockMvcResultMatchers.jsonPath("$.user.cart")
+                        .doesNotExist())
+                .andExpect(MockMvcResultMatchers.jsonPath("$.products")
                         .doesNotExist());
 
-        verify(cartService).getCartInfoForUser("user101");
+        verify(cartService).getCartForUser("user101");
     }
 }
