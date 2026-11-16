@@ -31,6 +31,7 @@ Sample user profiles are available in the repository to support development and 
 | UserId   | FirstName | LastName|
 |----------|-----------|---------|
 | user101  | John      | Doe     |
+| user102  | Rachel    | Zane    |
 
 ### Stores
 Sample store data seeded for development purposes only.
@@ -65,9 +66,158 @@ outlet. Menus and grocery inventories are exposed as read-only snapshots.
 | meal101 | Chicken Curry | restaurant101 | 25.00 | 20 |
 | meal102 | Vegetable Curry | restaurant101 | 18.00 | 20 |
 
+## Current Architecture
+
+This is a single Spring Boot backend. The business introduction describes the
+product scenario; the implemented backend currently covers catalogs, carts,
+restaurant customization, order placement/status, manual stock updates, inventory
+health and the last purchased outlet. Payments, delivery estimates/tracking,
+recommendations and feedback are not implemented.
+
+### Components and Dependencies
+
+```mermaid
+flowchart LR
+    subgraph HTTP[HTTP controllers]
+        CC[CartController]
+        IC[InventoryController]
+        OC[OrderController]
+        UC[UserController]
+    end
+    subgraph Business[Application services]
+        CS[CartService]
+        PS[ProductService]
+        IS[InventoryService]
+        HS[InventoryHealthService]
+        OS[OrderService]
+        US[UserService]
+        LS[LastPurchaseService]
+    end
+    subgraph Storage[In-memory repository interfaces]
+        CR[CartRepository]
+        SR[StoreRepository]
+        OR[OrderRepository]
+        UR[UserRepository]
+    end
+    CC --> CS
+    IC --> IS
+    IC --> HS
+    OC --> OS
+    UC --> LS
+    CS --> CR
+    CS --> PS
+    CS --> US
+    IS --> PS
+    HS --> SR
+    PS --> SR
+    OS --> CS
+    OS --> PS
+    OS --> OR
+    OS --> US
+    LS --> US
+    LS --> OR
+    LS --> SR
+    US --> UR
+```
+
+| Layer/package | Responsibility |
+|---------------|----------------|
+| `controller` | HTTP routes, request validation, response statuses and exception translation |
+| `dto.request` | Validated inputs for additions, quantity changes, stock and order operations |
+| `service` | Cart rules, catalog lookup, checkout, stock updates, health classification and history lookup |
+| `domain` | Catalog entities, cart/item values and the order state machine |
+| `repository` | Interfaces and `InMemory*Repository` implementations backed by instance-owned concurrent maps |
+| `config` | Repository wiring and an injectable clock for order timestamps |
+| `seedData` | Startup users, grocery stores, restaurant menus and products |
+
+`RepositoryConfiguration` loads users and outlets from `SeedData`; cart and order
+repositories start empty. `SeedData` exposes static mutable entities, so separate
+Spring contexts in the same JVM can still share those objects even though their
+repository maps are independent. Integration tests restore any modified seed state.
+
+All runtime state is in memory and disappears on restart. The H2/JPA settings in
+`application.yaml` are leftover configuration: the build has no H2/JPA dependencies
+or database-backed repositories.
+
+### Domain Model and Identity
+
+| Model | Meaning and identity |
+|-------|----------------------|
+| `Outlet<P>` | Abstract catalog owner with typed registration and lookup operations |
+| `Restaurant` / `FoodProduct` | Restaurant menu and prepared meal; choices belong to the cart line |
+| `GroceryStore` / `GroceryProduct` | Grocery inventory and product stock/threshold information |
+| `Cart` | One lazily created cart per user ID, containing products from at most one outlet |
+| `CartItem` | Immutable line with a generated `cartItemId`, copied product details/price, quantity and optional meal choices |
+| `Order` | Saved order ID, user/outlet IDs, copied immutable lines, creation time and mutable current status |
+| `User` | User details and internal `lastOrderId`; the last purchased outlet is resolved from that order |
+
+`cartId` identifies the whole cart; `cartItemId` identifies a selected line;
+`productId` identifies a catalog entry. Two versions of one meal have the same
+product ID and different line IDs. Quantity changes retain the line ID, price and
+choices. Checkout copies retain line IDs and choices and use the validated catalog
+price/details. Saved orders are independent of later cart changes.
+
+Product IDs are intended to be distinct across outlets. Registration enforces
+ownership and duplicate IDs within an outlet; global ID uniqueness is not enforced.
+Cart and inventory operations use outlet-scoped lookup. The unscoped
+`ProductService.getProduct(productId)` can be ambiguous if the convention is violated.
+
+### Request Flows and Consistency
+
+- **Add/update cart:** validate the user, atomically get/create its canonical cart,
+  hold the cart monitor, validate catalog ownership/stock, then add or replace an
+  immutable line. Decreases/removal require no catalog lookup.
+- **View cart:** copy its item list under the same monitor. The list and items are
+  detached; `user` and `outlet` still reference live domain objects. This is not a
+  deep snapshot of the nested catalog.
+- **Checkout:** hold the cart monitor, validate and copy lines, save the order,
+  update the user's last-order reference, then clear the cart. If the history write
+  fails, restore its previous reference and attempt to remove the new order.
+- **Inventory:** updates lock one product through read/validate/write/response
+  capture. Cart/checkout availability checks and health reads use that same product
+  monitor. Locks are acquired in cart-to-product order; inventory updates never
+  acquire a cart lock. A store health report captures products individually, not
+  as one atomic store-wide snapshot.
+- **Catalog registration:** outlet/product monitors protect registration checks and
+  ownership assignment. Menu/inventory collections are read-only snapshots, but
+  the catalog entities inside them remain mutable.
+
+These locks coordinate one JVM. Stock is not reserved or deducted at checkout,
+and order/history compensation is not a durable database transaction. `PUT` stock
+and absolute quantity updates are retry-safe in their effects; repeated cart-add
+or stock-adjustment `POST` requests apply again because no deduplication key exists.
+
+### Known Gaps to Address
+
+The existing tests cover normal flows and several concurrency/failure cases, but
+these behaviors still need fixes or explicit policy:
+
+| Area | Current gap |
+|------|-------------|
+| Numeric request validation | Default JSON coercion accepts fractional values for integer fields before validation; `quantity: 0.9` can become zero and remove a line. Numeric enum ordinals are also accepted. |
+| Order status changes | Transition validation/mutation is not synchronized; a failed repository save leaves the live stored order mutated. |
+| Expected order conflicts | Invalid transitions and changed catalog prices throw unmapped state exceptions and produce HTTP 500. A price change currently requires removing/re-adding affected cart lines before checkout. |
+| Catalog consistency | Grocery price/owner aliases can disagree with inherited fields; public identity/owner setters can bypass registration invariants. |
+| Caller identity | No authentication/authorization is implemented. Client-supplied user IDs select carts/history; order and stock routes do not enforce caller roles. |
+| Persistence and inventory | No durable storage, cross-process locking, inventory reservation or automatic deduction is implemented. |
+
 ## API
 
-Below is a list of API endpoints with their respective input and output. Please note that the application needs to be running for the following endpoints to work. For more information about how to run the application, please refer to run the application section above.
+The application must be running to call these endpoints; see the
+[run instructions](#useful-gradle-commands) below.
+
+| Method | Route | Success response |
+|--------|-------|------------------|
+| POST | `/cart/product` | 200, added `CartItem` |
+| GET | `/cart/view?userId=...` | 200, `Cart` item-list snapshot |
+| PATCH | `/cart/items/{cartItemId}` | 200, updated `Cart` snapshot |
+| POST | `/orders` | 201, `Order` and `Location` header |
+| GET | `/orders/{orderId}` | 200, saved `Order` |
+| PATCH | `/orders/{orderId}/status` | 200, updated `Order` |
+| GET | `/users/{userId}/last-purchase` | 200, last purchase; 204 if none |
+| GET | `/inventory/health?storeId=...` | 200, grocery health report |
+| PUT | `/inventory/{outletId}/products/{productId}/stock` | 200, stock response |
+| POST | `/inventory/{outletId}/products/{productId}/stock-adjustments` | 200, stock response |
 
 ### Add Product to Cart
 ```http
