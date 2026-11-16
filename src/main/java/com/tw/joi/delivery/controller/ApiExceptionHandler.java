@@ -10,8 +10,14 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
-    @ExceptionHandler({InsufficientStockException.class, EmptyCartException.class})
-    public ResponseEntity<ErrorResponse> handleCartConflict(RuntimeException exception) {
+    @ExceptionHandler(PriceChangedException.class)
+    public ResponseEntity<ErrorResponse> handlePriceChanged(PriceChangedException exception) {
+        return ResponseEntity.ok(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler({InsufficientStockException.class, EmptyCartException.class,
+            InvalidOrderStatusTransitionException.class})
+    public ResponseEntity<ErrorResponse> handleConflict(RuntimeException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ErrorResponse(exception.getMessage()));
     }

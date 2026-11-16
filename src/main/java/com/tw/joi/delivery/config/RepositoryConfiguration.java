@@ -9,13 +9,18 @@ import org.springframework.context.annotation.Configuration;
 public class RepositoryConfiguration {
 
     @Bean
-    public StoreRepository storeRepository() {
-        return new InMemoryOutletRepository(SeedData.outlets);
+    public SeedData seedData() {
+        return SeedData.create();
     }
 
     @Bean
-    public UserRepository userRepository() {
-        return new InMemoryUserRepository(SeedData.users);
+    public StoreRepository storeRepository(SeedData seedData) {
+        return new InMemoryOutletRepository(seedData.getOutlets());
+    }
+
+    @Bean
+    public UserRepository userRepository(SeedData seedData) {
+        return new InMemoryUserRepository(seedData.getUsers());
     }
 
     @Bean

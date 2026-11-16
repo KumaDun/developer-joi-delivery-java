@@ -1,5 +1,6 @@
 package com.tw.joi.delivery.domain;
 
+import com.tw.joi.delivery.exception.InvalidOrderStatusTransitionException;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -58,9 +59,7 @@ public final class Order {
         Objects.requireNonNull(next, "Next status must not be null");
 
         if (!status.canTransitionTo(next)) {
-            throw new IllegalStateException(
-                    "Cannot transition order from " + status + " to " + next
-            );
+            throw new InvalidOrderStatusTransitionException(status, next);
         }
 
         this.status = next;

@@ -1,4 +1,5 @@
 # Welcome to JOI Delivery
+
 JOI Delivery is built for real life. For the young professional who gets home late and doesn’t have the energy to cook. For the student with an exam tomorrow and an empty fridge tonight. These aren’t exceptions — they’re everyday moments. That’s why JOI Delivery brings food and groceries to your door, fast, fresh, and right when you need them.
 
 Customers struggle with:
@@ -16,16 +17,19 @@ JOI Delivery was built not just as another delivery app, but as a thoughtful, te
 JOI Delivery, launched in 2024, is a hyperlocal delivery app designed to bring food and groceries to your doorstep in under 45 minutes. With the tagline "Speed meets convenience," it connects customers to nearby restaurants and stores through a seamless digital experience. The app solves the hassle of long wait times and limited local options by offering real-time tracking, instant order updates, and a wide network of trusted vendors.
 
 ## Business Goals
+
 - Differentiated Value Proposition & Niche Dominance
 - Deliver Unmatched Customer Experience & Loyalty
 - Superior Operational Efficiency & Cost Advantage
 - Robust & Engaged Partner Ecosystem
 
 ## Why they need Thoughtworks help
+
 As JOI Delivery continues to grow and serve more neighborhoods, we’re scaling our platform to handle increasing demand, enhance user experience, and support smarter delivery logistics. They're looking for passionate developers to help us build robust, efficient, and scalable solutions that power everything from order placement to real-time tracking.
 Your expertise will directly impact how quickly and reliably customers receive their essentials—and how smoothly local vendors and delivery partners operate within our ecosystem.
 
 ### Users/Customers
+
 Sample user profiles are available in the repository to support development and testing scenarios.
 
 | UserId   | FirstName | LastName|
@@ -34,6 +38,7 @@ Sample user profiles are available in the repository to support development and 
 | user102  | Rachel    | Zane    |
 
 ### Stores
+
 Sample store data seeded for development purposes only.
 
 | StoreId  | OutletName     |
@@ -42,6 +47,7 @@ Sample store data seeded for development purposes only.
 | store102 | Natural Choice |
 
 ### Grocery Products
+
 Dummy Products for Stores to sell and users to buy from.
 
 | ProductId  | ProductName | StoreRefId |
@@ -71,7 +77,8 @@ outlet. Menus and grocery inventories are exposed as read-only snapshots.
 This is a single Spring Boot backend. The business introduction describes the
 product scenario; the implemented backend currently covers catalogs, carts,
 restaurant customization, order placement/status, manual stock updates, inventory
-health and the last purchased outlet. Payments, delivery estimates/tracking,
+health, the last purchased outlet and standalone mock payment decisions. Real
+payment processing, payment-to-checkout integration, delivery estimates/tracking,
 recommendations and feedback are not implemented.
 
 ### Components and Dependencies
@@ -83,6 +90,7 @@ flowchart LR
         IC[InventoryController]
         OC[OrderController]
         UC[UserController]
+        PC[PaymentController]
     end
     subgraph Business[Application services]
         CS[CartService]
@@ -92,6 +100,7 @@ flowchart LR
         OS[OrderService]
         US[UserService]
         LS[LastPurchaseService]
+        MPS[MockPaymentService]
     end
     subgraph Storage[In-memory repository interfaces]
         CR[CartRepository]
@@ -104,6 +113,7 @@ flowchart LR
     IC --> HS
     OC --> OS
     UC --> LS
+    PC --> MPS
     CS --> CR
     CS --> PS
     CS --> US
@@ -123,17 +133,21 @@ flowchart LR
 | Layer/package | Responsibility |
 |---------------|----------------|
 | `controller` | HTTP routes, request validation, response statuses and exception translation |
-| `dto.request` | Validated inputs for additions, quantity changes, stock and order operations |
-| `service` | Cart rules, catalog lookup, checkout, stock updates, health classification and history lookup |
-| `domain` | Catalog entities, cart/item values and the order state machine |
+| `dto.request` | Validated inputs for additions, quantity changes, stock, orders and mock payments |
+| `dto.response` | API snapshots, mock payment decisions and clear error messages |
+| `service` | Cart rules, catalog lookup, checkout, stock updates, health classification, history lookup and mock payment decisions |
+| `domain` | Catalog entities, cart/item values, the order state machine and mock payment statuses |
+| `exception` | Explicit missing-resource, cart/stock, price-change and order-transition errors |
 | `repository` | Interfaces and `InMemory*Repository` implementations backed by instance-owned concurrent maps |
-| `config` | Repository wiring and an injectable clock for order timestamps |
+| `config` | Repository wiring and an injectable clock for order timestamps and mock card expiry checks |
 | `seedData` | Startup users, grocery stores, restaurant menus and products |
 
-`RepositoryConfiguration` loads users and outlets from `SeedData`; cart and order
-repositories start empty. `SeedData` exposes static mutable entities, so separate
-Spring contexts in the same JVM can still share those objects even though their
-repository maps are independent. Integration tests restore any modified seed state.
+`RepositoryConfiguration` calls `SeedData.create()` once per Spring context and
+shares that seed instance with its user and outlet repositories; cart and order
+repositories start empty. Each context receives fresh users, outlets and nested
+products for the same sample users and catalog. Services within a context share
+its repositories and entities. Integration tests restore seed state they modify
+because test classes can reuse the same cached Spring context.
 
 All runtime state is in memory and disappears on restart. The H2/JPA settings in
 `application.yaml` are leftover configuration: the build has no H2/JPA dependencies
@@ -150,6 +164,7 @@ or database-backed repositories.
 | `CartItem` | Immutable line with a generated `cartItemId`, copied product details/price, quantity and optional meal choices |
 | `Order` | Saved order ID, user/outlet IDs, copied immutable lines, creation time and mutable current status |
 | `User` | User details and internal `lastOrderId`; the last purchased outlet is resolved from that order |
+| `PaymentStatus` | `ACCEPTED` or `REJECTED` mock decision; no persisted payment entity |
 
 `cartId` identifies the whole cart; `cartItemId` identifies a selected line;
 `productId` identifies a catalog entry. Two versions of one meal have the same
@@ -173,6 +188,9 @@ Cart and inventory operations use outlet-scoped lookup. The unscoped
 - **Checkout:** hold the cart monitor, validate and copy lines, save the order,
   update the user's last-order reference, then clear the cart. If the history write
   fails, restore its previous reference and attempt to remove the new order.
+- **Mock payment:** validate request fields and compare the expiration month with
+  the injected clock, then return a deterministic acceptance or rejection. The
+  service has no repository dependency and does not change carts or orders.
 - **Inventory:** updates lock one product through read/validate/write/response
   capture. Cart/checkout availability checks and health reads use that same product
   monitor. Locks are acquired in cart-to-product order; inventory updates never
@@ -194,32 +212,37 @@ these behaviors still need fixes or explicit policy:
 
 | Area | Current gap |
 |------|-------------|
-| Numeric request validation | Default JSON coercion accepts fractional values for integer fields before validation; `quantity: 0.9` can become zero and remove a line. Numeric enum ordinals are also accepted. |
 | Order status changes | Transition validation/mutation is not synchronized; a failed repository save leaves the live stored order mutated. |
-| Expected order conflicts | Invalid transitions and changed catalog prices throw unmapped state exceptions and produce HTTP 500. A price change currently requires removing/re-adding affected cart lines before checkout. |
+| Price reconfirmation | Checkout reports changed prices without placing an order; accepting the new price currently requires removing/re-adding affected cart lines. There is no dedicated price-refresh/reconfirmation endpoint. |
 | Catalog consistency | Grocery price/owner aliases can disagree with inherited fields; public identity/owner setters can bypass registration invariants. |
 | Caller identity | No authentication/authorization is implemented. Client-supplied user IDs select carts/history; order and stock routes do not enforce caller roles. |
+| Payments | Only mock acceptance/rejection is implemented; there are no real charges, payment persistence, refunds or checkout integration. |
 | Persistence and inventory | No durable storage, cross-process locking, inventory reservation or automatic deduction is implemented. |
 
 ## API
 
 The application must be running to call these endpoints; see the
 [run instructions](#useful-gradle-commands) below.
+Quantity/stock inputs must be integer JSON numbers. Decimal numbers, including
+`1.0`, return HTTP 400 before reaching the services. Enum choices use their string
+names; numeric enum ordinals also return HTTP 400.
 
 | Method | Route | Success response |
 |--------|-------|------------------|
 | POST | `/cart/product` | 200, added `CartItem` |
 | GET | `/cart/view?userId=...` | 200, `Cart` item-list snapshot |
 | PATCH | `/cart/items/{cartItemId}` | 200, updated `Cart` snapshot |
-| POST | `/orders` | 201, `Order` and `Location` header |
+| POST | `/orders` | 201, `Order` and `Location`; 200 with a message if prices changed and no order was placed |
 | GET | `/orders/{orderId}` | 200, saved `Order` |
 | PATCH | `/orders/{orderId}/status` | 200, updated `Order` |
+| POST | `/payments` | 200, mock `PaymentResponse` with `ACCEPTED` or `REJECTED` |
 | GET | `/users/{userId}/last-purchase` | 200, last purchase; 204 if none |
 | GET | `/inventory/health?storeId=...` | 200, grocery health report |
 | PUT | `/inventory/{outletId}/products/{productId}/stock` | 200, stock response |
 | POST | `/inventory/{outletId}/products/{productId}/stock-adjustments` | 200, stock response |
 
 ### Add Product to Cart
+
 ```http
 POST /cart/product
 Content-Type: application/json
@@ -341,6 +364,7 @@ Concurrent absolute updates to the same item use the last processed target value
 Cart quantity changes do not change inventory stock.
 
 ### View Cart
+
 ```http
 GET /cart/view?userId=user101
 ```
@@ -386,6 +410,19 @@ selection. Grocery order items omit both customization fields.
 
 Checkout of an empty cart returns HTTP 409 with a clear error message.
 
+If a catalog price differs from the captured cart price, checkout returns HTTP 200
+with a message and no `Location` header:
+
+```json
+{
+  "message": "Order not placed: price for product meal101 changed from 25.00 to 27.00."
+}
+```
+
+No order is saved, and the cart and last-purchase reference stay unchanged. Clients
+must distinguish this HTTP 200 message from the HTTP 201 order response. Remove
+and re-add the affected line to capture the current price before retrying checkout.
+
 A successful checkout returns HTTP 201 with a `Location: /orders/{orderId}` header
 and the order directly in the response body. Example after adding two Chicken Curry
 meals with medium spice and utensils requested (ID and timestamp are generated):
@@ -420,6 +457,63 @@ Cart locking applies within one application instance. Stock is checked but is no
 reserved or deducted; preventing overselling across different customers requires
 a separate atomic inventory operation.
 
+### Mock Payment
+
+```http
+POST /payments
+Content-Type: application/json
+```
+
+This standalone endpoint simulates a payment decision. It does not charge a card,
+place an order, clear a cart or change an order's status. `POST /orders` remains
+independent of this mock decision.
+
+Request Body (use fictitious card details):
+
+```json
+{
+  "cardNumber": "4111111111111111",
+  "cvv": "123",
+  "expirationDate": "2099-12"
+}
+```
+
+| Field | Format |
+|-------|--------|
+| `cardNumber` | Required string containing 13–19 ASCII digits, without spaces or separators |
+| `cvv` | Required string containing 3–4 ASCII digits; leading zeros are retained |
+| `expirationDate` | Required string in `YYYY-MM` format with a month from `01` to `12` |
+
+Well-formed requests return HTTP 200 with a decision and a short message:
+
+```json
+{
+  "status": "ACCEPTED",
+  "message": "Mock payment accepted."
+}
+```
+
+The rules are evaluated in this order:
+
+| Condition | Status | Message |
+|-----------|--------|---------|
+| Expiration month is before the current month | `REJECTED` | `Card has expired.` |
+| Current/future expiration month and card number ends with `0000` | `REJECTED` | `Payment declined. Try another card.` |
+| Other well-formed request | `ACCEPTED` | `Mock payment accepted.` |
+
+The current expiration month is valid. These rules simulate outcomes; they do not
+verify an issuer, card balance or CVV. Card details are not persisted, logged or
+echoed in the response.
+
+Missing fields, malformed field values or an unreadable request return HTTP 400
+with a safe error message. For example, an invalid expiration month returns:
+
+```json
+{
+  "message": "Expiration date must use YYYY-MM with a valid month"
+}
+```
+
 ### View Order
 
 ```http
@@ -428,6 +522,39 @@ GET /orders/{orderId}
 
 Returns the saved order directly with HTTP 200, including item quantities, prices,
 meal customizations, total and current status. An unknown order ID returns HTTP 404.
+
+### Change Order Status
+
+```http
+PATCH /orders/{orderId}/status
+Content-Type: application/json
+```
+
+```json
+{"status":"CONFIRMED"}
+```
+
+The domain allows these transitions; delivered and cancelled orders are terminal:
+
+```mermaid
+stateDiagram-v2
+    [*] --> PLACED
+    PLACED --> CONFIRMED
+    PLACED --> CANCELLED
+    CONFIRMED --> PREPARING
+    CONFIRMED --> CANCELLED
+    PREPARING --> READY_FOR_PICKUP
+    READY_FOR_PICKUP --> OUT_FOR_DELIVERY
+    OUT_FOR_DELIVERY --> DELIVERED
+    DELIVERED --> [*]
+    CANCELLED --> [*]
+```
+
+Updates currently record only the current status, without a status-event history
+or delivery estimate. Invalid transitions return HTTP 409 with a message such as
+`Cannot transition order from PLACED to DELIVERED`, leaving the status unchanged.
+Synchronizing concurrent status changes and handling status-save failures remain
+review follow-ups.
 
 ### Last Purchase
 
@@ -457,6 +584,7 @@ is unavailable, its ID is retained and `outletName` is `null`. History is in mem
 and is lost when the application restarts.
 
 ### Inventory Health
+
 ```http
 GET /inventory/health?storeId=store101
 ```
@@ -557,6 +685,7 @@ not rewrite cart quantities; checkout rechecks current stock. Stock reservation
 and automatic checkout deduction remain separate features.
 
 ## Tech Requirements
+
 The project requires Java 25. If you have multiple JVMs on your machine, you might want to
 consider using a tool such as [sdkman](https://sdkman.io/) to handle switching between versions.
 
@@ -574,18 +703,22 @@ Installing java on Windows, [refer](https://www.java.com/en/download/help/window
 Other ways to Download and install java, [refer](https://www.oracle.com/in/java/technologies/downloads/#java25).
 
 #### Verify Java Version Installed
+
 ```console
 java -version
 ```
 
 ### Useful Gradle commands
+
 #### Build the project
+
 Compiles the project, runs the test and then creates an executable JAR file
 ```bash
 $ ./gradlew build
 ```
 
 #### Run the application
+
 Run the application which will be listening on port ```8080```.
 ```bash
 $ ./gradlew bootRun
@@ -597,20 +730,44 @@ $ java -jar  build/libs/joi-delivery-java.jar
 ```
 
 #### Run the tests
-There are two types of tests, the unit tests and the functional tests. These can be executed as follows.
 
-* Run unit tests only
+All tests live in `src/test/java` and run through the same Gradle `test` task:
+
+| Test type | Purpose |
+|-----------|---------|
+| Plain JUnit and Mockito tests | Domain rules, service behavior, repositories and coordinated concurrency/failure cases |
+| `@WebMvcTest` with `@MockitoBean` | Request binding/validation, response JSON and HTTP error translation |
+| `@SpringBootTest` with MockMvc | Real HTTP-layer flows through services and configured in-memory repositories |
+
+Run the complete suite:
+
 ```bash
-$ ./gradlew test
+./gradlew test
 ```
-* Run both unit and functional tests
+
+Run Gradle verification, which includes that same test suite:
+
 ```bash
-$ ./gradlew check
+./gradlew check
 ```
+
+There is no separate functional-test source set or task in the current build.
+To select a service test or the named HTTP integration test classes:
+
+```bash
+./gradlew test --tests '*CartServiceTest'
+./gradlew test --tests '*IntegrationTest'
+```
+
+Regression coverage includes fractional/numeric-enum input rejection and HTTP
+price/status conflicts, plus separate-context seed isolation. Review follow-up
+coverage should include concurrent order-status changes and status-save failure.
+
 #### List all Gradle tasks
+
 List all the tasks that Gradle can run, such as ```build ``` and ```test```.
 ```bash
 $ ./gradlew tasks
 ```
 
-> Note: We are currently using Java 25, which is the current LTS version.
+> The build selects the Java 25 toolchain; the Gradle wrapper supplies Gradle.

@@ -1,7 +1,7 @@
 package com.tw.joi.delivery.controller;
 
 import com.tw.joi.delivery.domain.Product;
-import com.tw.joi.delivery.seedData.SeedData;
+import com.tw.joi.delivery.repository.StoreRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +24,9 @@ class InventoryStockIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private StoreRepository storeRepository;
+
     private Product grocery;
     private Product meal;
     private int groceryStock;
@@ -31,8 +34,10 @@ class InventoryStockIntegrationTest {
 
     @BeforeEach
     void saveStock() {
-        grocery = SeedData.store101.findProduct("product101").orElseThrow();
-        meal = SeedData.restaurant101.findProduct("meal101").orElseThrow();
+        grocery = storeRepository.findById("store101").orElseThrow()
+                .findProduct("product101").orElseThrow();
+        meal = storeRepository.findById("restaurant101").orElseThrow()
+                .findProduct("meal101").orElseThrow();
         synchronized (grocery) {
             groceryStock = grocery.getAvailableStock();
         }

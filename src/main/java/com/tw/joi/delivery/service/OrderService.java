@@ -4,6 +4,7 @@ import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.exception.OrderDoesNotExistException;
 import com.tw.joi.delivery.exception.EmptyCartException;
 import com.tw.joi.delivery.exception.InsufficientStockException;
+import com.tw.joi.delivery.exception.PriceChangedException;
 import com.tw.joi.delivery.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -139,9 +140,8 @@ public class OrderService {
                 }
 
                 if (currentPrice.compareTo(item.getUnitPrice()) != 0) {
-                    // TODO update latest price
-                    throw new IllegalStateException(
-                            "Price changed for product: " + item.getProductId()
+                    throw new PriceChangedException(
+                            item.getProductId(), item.getUnitPrice(), currentPrice
                     );
                 }
 

@@ -4,6 +4,8 @@ import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.exception.OrderDoesNotExistException;
 import com.tw.joi.delivery.exception.EmptyCartException;
 import com.tw.joi.delivery.exception.InsufficientStockException;
+import com.tw.joi.delivery.exception.InvalidOrderStatusTransitionException;
+import com.tw.joi.delivery.exception.PriceChangedException;
 import com.tw.joi.delivery.repository.InMemoryOrderRepository;
 import com.tw.joi.delivery.repository.OrderRepository;
 import com.tw.joi.delivery.repository.UserRepository;
@@ -251,20 +253,25 @@ class OrderServiceTest {
     @Test
     void shouldRejectChangedPriceAndPreserveCartPrice() {
         stubCheckout();
+        user.setLastOrderId("previous-order");
 
         // Cart already captured 10.50.
         product.setSellingPrice(new BigDecimal("11.50"));
 
-        assertThrows(
-                IllegalStateException.class,
+        PriceChangedException exception = assertThrows(
+                PriceChangedException.class,
                 () -> orderService.placeOrder("user101")
         );
 
+        assertEquals("Order not placed: price for product product101 changed from 10.50 to 11.50.",
+                exception.getMessage());
         assertEquals(1, cart.getCartItems().size());
         assertEquals(
                 new BigDecimal("10.50"),
                 cart.getCartItems().getFirst().getUnitPrice()
         );
+        assertEquals("previous-order", user.getLastOrderId());
+        verify(userRepository, never()).save(any(User.class));
         verify(orderRepository, never()).save(any(Order.class));
     }
 
@@ -340,7 +347,7 @@ class OrderServiceTest {
         clearInvocations(orderRepository);
 
         assertThrows(
-                IllegalStateException.class,
+                InvalidOrderStatusTransitionException.class,
                 () -> orderService.changeStatus(
                         "order101", OrderStatus.DELIVERED
                 )

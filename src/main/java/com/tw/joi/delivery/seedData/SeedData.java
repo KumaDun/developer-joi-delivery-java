@@ -4,34 +4,41 @@ import com.tw.joi.delivery.domain.*;
 import jakarta.annotation.Nonnull;
 
 import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import lombok.Getter;
 
-public class SeedData {
+@Getter
+public final class SeedData {
 
-    public static GroceryStore store101 = SeedData.createStore("Fresh Picks", "store101");
-    public static GroceryStore store102 = SeedData.createStore("Natural Choice", "store102");
+    private final List<User> users;
+    private final List<Outlet<?>> outlets;
 
-    public static Restaurant restaurant101 = Restaurant.builder()
-            .name("Spice Kitchen")
-            .outletId("restaurant101")
-            .build();
+    private SeedData(List<User> users, List<Outlet<?>> outlets) {
+        this.users = users;
+        this.outlets = outlets;
+    }
 
-    public static User user101= SeedData.createUser("user101", "John", "Doe");
-    public static User user102 = SeedData.createUser("user102", "Rachel", "Zane");
+    public static SeedData create() {
+        GroceryStore store101 = createStore("Fresh Picks", "store101");
+        GroceryStore store102 = createStore("Natural Choice", "store102");
+        Restaurant restaurant101 = Restaurant.builder()
+                .name("Spice Kitchen")
+                .outletId("restaurant101")
+                .build();
 
-    public static List<GroceryProduct> groceryProducts =
-        Arrays.asList(createGroceryProduct("Wheat Bread", "product101", store101),
-                      createGroceryProduct("Spinach", "product102", store101),
-                      createGroceryProduct("Crackers", "product103", store101));
+        createGroceryProduct("Wheat Bread", "product101", store101);
+        createGroceryProduct("Spinach", "product102", store101);
+        createGroceryProduct("Crackers", "product103", store101);
 
-    public static List<FoodProduct> foodProducts = Arrays.asList(
-            createFoodProduct("Chicken Curry", "meal101", new BigDecimal("25.00"), restaurant101),
-            createFoodProduct("Vegetable Curry", "meal102", new BigDecimal("18.00"), restaurant101));
+        createFoodProduct("Chicken Curry", "meal101", new BigDecimal("25.00"), restaurant101);
+        createFoodProduct("Vegetable Curry", "meal102", new BigDecimal("18.00"), restaurant101);
 
-    public static List<User> users = Arrays.asList(user101, user102);
-    public static List<Outlet<?>> outlets = List.of(store101, store102, restaurant101);
+        return new SeedData(
+                List.of(createUser("user101", "John", "Doe"), createUser("user102", "Rachel", "Zane")),
+                List.of(store101, store102, restaurant101)
+        );
+    }
 
     public static GroceryStore createStore(String outletName, String storeId) {
         return GroceryStore.builder()

@@ -2,7 +2,9 @@ package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.FoodProduct;
 import com.tw.joi.delivery.domain.GroceryProduct;
+import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.Product;
+import com.tw.joi.delivery.domain.Restaurant;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
 import com.tw.joi.delivery.exception.StoreIdDoesNotExistException;
 import com.tw.joi.delivery.repository.InMemoryOutletRepository;
@@ -16,11 +18,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class ProductServiceTest {
 
     private ProductService productService;
+    private StoreRepository storeRepository;
 
     @BeforeEach
     void setUp() {
-        StoreRepository storeRepository =
-                new InMemoryOutletRepository(SeedData.outlets);
+        SeedData seedData = SeedData.create();
+        storeRepository = new InMemoryOutletRepository(seedData.getOutlets());
 
         productService = new ProductService(storeRepository);
     }
@@ -35,7 +38,10 @@ class ProductServiceTest {
 
         assertEquals("product101", grocery.getProductId());
         assertEquals("store101", grocery.getStore().getOutletId());
-        assertTrue(SeedData.store101.getInventory().contains(grocery));
+        GroceryStore store = assertInstanceOf(GroceryStore.class,
+                storeRepository.findById("store101").orElseThrow());
+        assertSame(store, grocery.getStore());
+        assertTrue(store.getInventory().contains(grocery));
     }
 
     @Test
@@ -45,8 +51,10 @@ class ProductServiceTest {
         FoodProduct meal = assertInstanceOf(FoodProduct.class, product);
 
         assertEquals("Chicken Curry", meal.getProductName());
-        assertSame(SeedData.restaurant101, meal.getOutlet());
-        assertTrue(SeedData.restaurant101.getMenu().contains(meal));
+        Restaurant restaurant = assertInstanceOf(Restaurant.class,
+                storeRepository.findById("restaurant101").orElseThrow());
+        assertSame(restaurant, meal.getOutlet());
+        assertTrue(restaurant.getMenu().contains(meal));
     }
 
     @Test

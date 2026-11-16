@@ -4,8 +4,10 @@ import com.tw.joi.delivery.domain.Cart;
 import com.tw.joi.delivery.domain.CartItem;
 import com.tw.joi.delivery.domain.FoodProduct;
 import com.tw.joi.delivery.domain.Outlet;
-import com.tw.joi.delivery.seedData.SeedData;
+import com.tw.joi.delivery.domain.Restaurant;
 import com.tw.joi.delivery.repository.CartRepository;
+import com.tw.joi.delivery.repository.StoreRepository;
+import com.tw.joi.delivery.repository.UserRepository;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -36,14 +38,25 @@ class CartIntegrationTest {
     @Autowired
     private CartRepository cartRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private StoreRepository storeRepository;
+
     private Cart cart;
+    private Restaurant restaurant;
+    private FoodProduct meal;
     private List<CartItem> originalItems;
     private Outlet<?> originalOutlet;
     private String originalLastOrderId;
 
     @BeforeEach
     void setUp() {
-        cart = cartRepository.getOrCreateForUser(SeedData.user101);
+        cart = cartRepository.getOrCreateForUser(userRepository.findById("user101").orElseThrow());
+        restaurant = assertInstanceOf(Restaurant.class,
+                storeRepository.findById("restaurant101").orElseThrow());
+        meal = restaurant.findProduct("meal101").orElseThrow();
         originalItems = cart.getCartItems();
         originalOutlet = cart.getOutlet();
         synchronized (cart.getUser()) {
@@ -90,7 +103,7 @@ class CartIntegrationTest {
                 .andExpect(jsonPath("$.cartItems[0].spiceLevel").value("MEDIUM"))
                 .andExpect(jsonPath("$.cartItems[0].utensilsNeeded").value(true));
 
-        assertEquals(20, SeedData.restaurant101.findProduct("meal101").orElseThrow().getAvailableStock());
+        assertEquals(20, meal.getAvailableStock());
     }
 
     @Test
@@ -102,7 +115,7 @@ class CartIntegrationTest {
                 .andExpect(jsonPath("$.spiceLevel").value("NONE"))
                 .andExpect(jsonPath("$.utensilsNeeded").value(false));
 
-        assertSame(SeedData.restaurant101, cart.getOutlet());
+        assertSame(restaurant, cart.getOutlet());
     }
 
     @ParameterizedTest
@@ -261,8 +274,8 @@ class CartIntegrationTest {
 
         assertEquals(List.of(originalItem), cart.getCartItems());
         assertEquals(10, originalItem.getQuantity());
-        assertSame(SeedData.restaurant101, cart.getOutlet());
-        assertEquals(20, SeedData.restaurant101.findProduct("meal101").orElseThrow().getAvailableStock());
+        assertSame(restaurant, cart.getOutlet());
+        assertEquals(20, meal.getAvailableStock());
     }
 
     @Test
@@ -272,7 +285,6 @@ class CartIntegrationTest {
                         .content(request("meal101", "restaurant101", 2)))
                 .andExpect(status().isOk());
         CartItem originalItem = cart.getCartItems().getFirst();
-        FoodProduct meal = SeedData.restaurant101.findProduct("meal101").orElseThrow();
         int originalStock = meal.getAvailableStock();
         try {
             meal.setAvailableStock(1);
@@ -285,7 +297,7 @@ class CartIntegrationTest {
                             .value("Requested quantity 2 exceeds available stock 1 for product meal101"));
 
             assertEquals(List.of(originalItem), cart.getCartItems());
-            assertSame(SeedData.restaurant101, cart.getOutlet());
+            assertSame(restaurant, cart.getOutlet());
         } finally {
             meal.setAvailableStock(originalStock);
         }
