@@ -240,15 +240,57 @@ meal customizations, total and current status. An unknown order ID returns HTTP 
 
 ### Inventory Health
 ```http
-GET /inventory/health?storeid=<storeid>
+GET /inventory/health?storeId=store101
 ```
 
-Response Body 
-```json lines
+Returns HTTP 200 with the store ID, store name and stock health for each product.
+Products are sorted by product ID.
+
+```json
 {
-    // to be implemented.
+  "storeId": "store101",
+  "storeName": "Fresh Picks",
+  "products": [
+    {
+      "productId": "product101",
+      "productName": "Wheat Bread",
+      "availableStock": 30,
+      "threshold": 10,
+      "status": "HEALTHY"
+    },
+    {
+      "productId": "product102",
+      "productName": "Spinach",
+      "availableStock": 30,
+      "threshold": 10,
+      "status": "HEALTHY"
+    },
+    {
+      "productId": "product103",
+      "productName": "Crackers",
+      "availableStock": 30,
+      "threshold": 10,
+      "status": "HEALTHY"
+    }
+  ]
 }
 ```
+
+| Stock condition | Status |
+|-----------------|--------|
+| Stock is zero | `OUT_OF_STOCK` |
+| Stock is positive and at or below the threshold | `LOW_STOCK` |
+| Stock is above the threshold | `HEALTHY` |
+
+An existing empty store, such as `store102`, returns HTTP 200 with
+`{"storeId":"store102","storeName":"Natural Choice","products":[]}`.
+Missing or blank `storeId` returns HTTP 400;
+an unknown ID returns HTTP 404. Restaurant IDs return HTTP 400 because restaurant
+stock-health thresholds have not been defined.
+
+The report copies the current stock and threshold values without changing inventory.
+Negative stock or threshold values are treated as invalid catalog data and fail
+the report rather than produce a misleading status.
 
 ## Tech Requirements
 The project requires Java 25. If you have multiple JVMs on your machine, you might want to
