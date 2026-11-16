@@ -19,6 +19,11 @@ public class RepositoryConfiguration {
     }
 
     @Bean
+    public CartRepository cartRepository() {
+        return new InMemoryCartRepository();
+    }
+
+    @Bean
     public OrderRepository orderRepository() {
         return new InMemoryOrderRepository();
     }

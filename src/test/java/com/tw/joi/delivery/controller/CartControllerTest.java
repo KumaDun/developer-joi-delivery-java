@@ -64,14 +64,14 @@ public class CartControllerTest {
     void shouldReturnNotFoundWhenUserDoesNotExist() throws Exception {
         String userId = "missing";
 
-        when(cartService.getCartForUser(userId))
+        when(cartService.getCartSnapshotForUser(userId))
                 .thenThrow(new UserDoesNotExistException(userId));
 
         mockMvc.perform(MockMvcRequestBuilders.get("/cart/view")
                         .param("userId", userId))
                 .andExpect(status().isNotFound());
 
-        verify(cartService).getCartForUser(userId);
+        verify(cartService).getCartSnapshotForUser(userId);
     }
 
     @Test
@@ -189,7 +189,7 @@ public class CartControllerTest {
         String userId="user101";
         Cart cart = Cart.builder().cartId("cart101").build();
 
-        when(cartService.getCartForUser(userId))
+        when(cartService.getCartSnapshotForUser(userId))
                 .thenReturn(cart);
 
         mockMvc.perform(MockMvcRequestBuilders.get(url,"user101")
@@ -241,7 +241,7 @@ public class CartControllerTest {
                 .build();
         user.setCart(cart);
 
-        when(cartService.getCartForUser("user101"))
+        when(cartService.getCartSnapshotForUser("user101"))
                 .thenReturn(cart);
 
         mockMvc.perform(MockMvcRequestBuilders.get("/cart/view")
@@ -270,6 +270,6 @@ public class CartControllerTest {
                 .andExpect(MockMvcResultMatchers.jsonPath("$.products")
                         .doesNotExist());
 
-        verify(cartService).getCartForUser("user101");
+        verify(cartService).getCartSnapshotForUser("user101");
     }
 }

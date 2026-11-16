@@ -8,13 +8,21 @@ import com.tw.joi.delivery.domain.GroceryStore;
 import com.tw.joi.delivery.domain.Outlet;
 import com.tw.joi.delivery.domain.Restaurant;
 import com.tw.joi.delivery.domain.SpiceLevel;
+import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
 import com.tw.joi.delivery.exception.ProductDoesNotExistException;
-import com.tw.joi.delivery.seedData.SeedData;
+import com.tw.joi.delivery.exception.InsufficientStockException;
+import com.tw.joi.delivery.exception.UserDoesNotExistException;
+import com.tw.joi.delivery.repository.CartRepository;
+import com.tw.joi.delivery.repository.InMemoryCartRepository;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import org.junit.jupiter.api.AfterEach;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -30,8 +38,8 @@ class CartServiceTest {
     private CartService cartService;
 
     private Cart cart;
-    private List<CartItem> originalItems;
-    private Outlet<?> originalOutlet;
+    private CartRepository cartRepository;
+    private User user;
     private GroceryProduct product;
     private GroceryStore store;
     private Restaurant restaurant;
@@ -41,14 +49,10 @@ class CartServiceTest {
     void setUp() {
         userService = mock(UserService.class);
         productService = mock(ProductService.class);
-        cartService = new CartService(userService, productService);
-
-        // CartService currently reads this shared seeded cart directly.
-        cart = SeedData.cartForUsers.get("user101");
-        originalItems = cart.getCartItems();
-        originalOutlet = cart.getOutlet();
-        cart.setCartItems(new ArrayList<>());
-        cart.setOutlet(null);
+        cartRepository = new InMemoryCartRepository();
+        cartService = new CartService(userService, productService, cartRepository);
+        user = User.builder().userId("user101").build();
+        cart = cartRepository.getOrCreateForUser(user);
 
         store = GroceryStore.builder().outletId("store101").name("Fresh Picks").build();
         product = GroceryProduct.builder()
@@ -67,13 +71,7 @@ class CartServiceTest {
         restaurant.addProduct(meal);
 
         when(userService.fetchUserById("user101"))
-                .thenReturn(SeedData.user101);
-    }
-
-    @AfterEach
-    void restoreCart() {
-        cart.setCartItems(originalItems);
-        cart.setOutlet(originalOutlet);
+                .thenReturn(user);
     }
 
     @Test
@@ -117,7 +115,7 @@ class CartServiceTest {
         cart.setOutlet(store);
 
         assertThrows(
-                IllegalStateException.class,
+                InsufficientStockException.class,
                 () -> cartService.addProductToCartForUser(request(6))
         );
 
@@ -136,7 +134,7 @@ class CartServiceTest {
         CartItem existing = cart.getCartItems().getFirst();
 
         assertThrows(
-                IllegalStateException.class,
+                InsufficientStockException.class,
                 () -> cartService.addProductToCartForUser(request(3))
         );
 
@@ -168,7 +166,7 @@ class CartServiceTest {
         product.setAvailableStock(0);
 
         assertThrows(
-                IllegalStateException.class,
+                InsufficientStockException.class,
                 () -> cartService.addProductToCartForUser(request(1))
         );
 
@@ -223,13 +221,14 @@ class CartServiceTest {
     }
 
     @Test
-    void shouldReturnCartWithQuantityAndPricesWithoutCatalogLookups() {
+    void shouldReturnCartSnapshotWithQuantityAndPricesWithoutCatalogLookups() {
         cart.getCartItems().add(new CartItem(product, 2));
         cart.setOutlet(store);
 
-        Cart result = cartService.getCartForUser("user101");
+        Cart result = cartService.getCartSnapshotForUser("user101");
 
-        assertEquals("cart101", result.getCartId());
+        assertNotSame(cart, result);
+        assertEquals(cart.getCartId(), result.getCartId());
         assertEquals("store101", result.getOutlet().getOutletId());
         assertEquals("user101", result.getUser().getUserId());
         assertEquals(1, result.getCartItems().size());
@@ -384,11 +383,133 @@ class CartServiceTest {
         assertEquals(SpiceLevel.HOT, second.getSpiceLevel());
         assertEquals(Boolean.TRUE, second.getUtensilsNeeded());
         assertEquals(5, first.getQuantity() + second.getQuantity());
-        assertThrows(IllegalStateException.class,
+        assertThrows(InsufficientStockException.class,
                 () -> cartService.addProductToCartForUser(mealRequest(1)));
         assertEquals(List.of(first, second), cart.getCartItems());
         assertSame(restaurant, cart.getOutlet());
         assertEquals(5, meal.getAvailableStock());
+    }
+
+    @Test
+    void shouldCreateCartForValidUserWithoutAnySeededCart() {
+        User newUser = User.builder().userId("new-user").firstName("New").build();
+        when(userService.fetchUserById("new-user")).thenReturn(newUser);
+
+        Cart first = cartService.getCartForUser("new-user");
+        Cart second = cartService.getCartForUser("new-user");
+
+        assertSame(first, second);
+        assertSame(newUser, first.getUser());
+        assertFalse(first.getCartId().isBlank());
+        assertTrue(first.getCartItems().isEmpty());
+        assertNull(first.getOutlet());
+    }
+
+    @Test
+    void shouldValidateUserBeforeCreatingCart() {
+        CartRepository repository = mock(CartRepository.class);
+        CartService service = new CartService(userService, productService, repository);
+        when(userService.fetchUserById("missing"))
+                .thenThrow(new UserDoesNotExistException("missing"));
+
+        assertThrows(UserDoesNotExistException.class,
+                () -> service.getCartForUser("missing"));
+
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    void shouldReturnSnapshotUnaffectedByLaterCartChanges() {
+        stubProductLookup();
+        CartItem firstItem = cartService.addProductToCartForUser(request(1));
+
+        Cart snapshot = cartService.getCartSnapshotForUser("user101");
+        cartService.addProductToCartForUser(request(1));
+        synchronized (cart) {
+            cart.getCartItems().clear();
+            cart.setOutlet(restaurant);
+        }
+
+        assertNotSame(cart, snapshot);
+        assertEquals(List.of(firstItem), snapshot.getCartItems());
+        assertSame(store, snapshot.getOutlet());
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.getCartItems().clear());
+    }
+
+    @Test
+    void shouldSerializeConcurrentAddsBeforeCheckingCombinedStock() throws Exception {
+        when(productService.getProduct("product101", "store101")).thenAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart), "Lookup and stock validation must hold the canonical cart lock");
+            return product;
+        });
+
+        List<RuntimeException> failures = attemptConcurrently(request(3), request(3));
+
+        assertEquals(1, failures.size());
+        assertInstanceOf(InsufficientStockException.class, failures.getFirst());
+        assertEquals("Requested quantity 6 exceeds available stock 5 for product product101",
+                failures.getFirst().getMessage());
+        assertEquals(1, cart.getCartItems().size());
+        assertEquals(3, cart.getCartItems().getFirst().getQuantity());
+        assertSame(store, cart.getOutlet());
+    }
+
+    @Test
+    void shouldKeepOneOutletWhenFirstAddsArriveConcurrently() throws Exception {
+        when(productService.getProduct("product101", "store101")).thenAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart));
+            return product;
+        });
+        when(productService.getProduct("meal101", "restaurant101")).thenAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart));
+            return meal;
+        });
+
+        List<RuntimeException> failures = attemptConcurrently(request(1), mealRequest(1));
+
+        assertEquals(1, failures.size());
+        assertInstanceOf(IllegalArgumentException.class, failures.getFirst());
+        assertEquals(1, cart.getCartItems().size());
+        CartItem item = cart.getCartItems().getFirst();
+        assertSame(item.getProductId().equals("meal101") ? restaurant : store, cart.getOutlet());
+    }
+
+    private List<RuntimeException> attemptConcurrently(
+            AddProductRequest first, AddProductRequest second) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<RuntimeException>> results = List.of(
+                    executor.submit(() -> attemptAdd(first, ready, start)),
+                    executor.submit(() -> attemptAdd(second, ready, start)));
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            List<RuntimeException> failures = new ArrayList<>();
+            for (Future<RuntimeException> result : results) {
+                RuntimeException failure = result.get(5, TimeUnit.SECONDS);
+                if (failure != null) {
+                    failures.add(failure);
+                }
+            }
+            return failures;
+        } finally {
+            start.countDown();
+            executor.shutdownNow();
+            assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    private RuntimeException attemptAdd(AddProductRequest request,
+                                        CountDownLatch ready, CountDownLatch start) throws Exception {
+        ready.countDown();
+        assertTrue(start.await(5, TimeUnit.SECONDS));
+        try {
+            cartService.addProductToCartForUser(request);
+            return null;
+        } catch (RuntimeException exception) {
+            return exception;
+        }
     }
 
     private void stubMealLookup() {

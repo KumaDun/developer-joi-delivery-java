@@ -6,8 +6,9 @@ import com.tw.joi.delivery.domain.Outlet;
 import com.tw.joi.delivery.domain.Product;
 import com.tw.joi.delivery.domain.User;
 import com.tw.joi.delivery.dto.request.AddProductRequest;
-import com.tw.joi.delivery.seedData.SeedData;
-import java.util.Map;
+import com.tw.joi.delivery.exception.InsufficientStockException;
+import com.tw.joi.delivery.repository.CartRepository;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,14 +17,18 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class CartService {
 
-    // TODO do not user SeedData in service
-    private final Map<String,Cart> userCarts= SeedData.cartForUsers;
     private final UserService userService;
     private final ProductService productService;
+    private final CartRepository cartRepository;
 
     public CartItem addProductToCartForUser(AddProductRequest addProductRequest) {
-        User user=userService.fetchUserById(addProductRequest.getUserId());
-        Cart cart = fetchCartForUser(user);
+        Cart cart = getCartForUser(addProductRequest.getUserId());
+        synchronized (cart) {
+            return addProductToCart(cart, addProductRequest);
+        }
+    }
+
+    private CartItem addProductToCart(Cart cart, AddProductRequest addProductRequest) {
         Product product = productService.getProduct(addProductRequest.getProductId(),
                                                            addProductRequest.getOutletId());
 
@@ -48,8 +53,8 @@ public class CartService {
         long totalQuantity = existingQuantity + quantity;
 
         if (totalQuantity > product.getAvailableStock()) {
-            throw new IllegalStateException(
-                    "Insufficient stock for product: " + product.getProductId()
+            throw new InsufficientStockException(
+                    product.getProductId(), totalQuantity, product.getAvailableStock()
             );
         }
         CartItem newItem = new CartItem(product, quantity, product.getUnitPrice(),
@@ -60,13 +65,23 @@ public class CartService {
         return newItem;
     }
 
+    /** Returns the canonical cart; internal callers must hold its monitor when accessing its state. */
     public Cart getCartForUser(String userId) {
         User user=userService.fetchUserById(userId);
-        return fetchCartForUser(user);
+        return cartRepository.getOrCreateForUser(user);
     }
 
-    private Cart fetchCartForUser(User user) {
-        return userCarts.get(user.getUserId());
+    /** Captures a detached item-list snapshot for serialization outside the cart lock. */
+    public Cart getCartSnapshotForUser(String userId) {
+        Cart cart = getCartForUser(userId);
+        synchronized (cart) {
+            return Cart.builder()
+                    .cartId(cart.getCartId())
+                    .outlet(cart.getOutlet())
+                    .cartItems(List.copyOf(cart.getCartItems()))
+                    .user(cart.getUser())
+                    .build();
+        }
     }
 
 }

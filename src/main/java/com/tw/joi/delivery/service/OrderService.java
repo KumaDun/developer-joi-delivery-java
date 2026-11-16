@@ -2,6 +2,8 @@ package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.exception.OrderDoesNotExistException;
+import com.tw.joi.delivery.exception.EmptyCartException;
+import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.repository.OrderRepository;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -36,10 +38,18 @@ public class OrderService {
     public Order placeOrder(String userId) {
         Cart cart = cartService.getCartForUser(userId);
 
-        if (cart == null || cart.getCartItems().isEmpty()) {
-            throw new IllegalStateException(
-                    "Cannot place an order without a nonempty cart"
-            );
+        if (cart == null) {
+            throw new EmptyCartException();
+        }
+
+        synchronized (cart) {
+            return placeOrderFromCart(userId, cart);
+        }
+    }
+
+    private Order placeOrderFromCart(String userId, Cart cart) {
+        if (cart.getCartItems().isEmpty()) {
+            throw new EmptyCartException();
         }
 
         if (cart.getOutlet() == null) {
@@ -84,7 +94,7 @@ public class OrderService {
             List<CartItem> cartItems,
             String outletId
     ) {
-        Map<String, Integer> quantities = new HashMap<>();
+        Map<String, Long> quantities = new HashMap<>();
         List<CartItem> acceptedItems = new ArrayList<>();
 
         for (CartItem item : cartItems) {
@@ -92,14 +102,14 @@ public class OrderService {
                     item.getProductId(), outletId
             );
 
-            int totalQuantity = Math.addExact(
-                    quantities.getOrDefault(item.getProductId(), 0),
+            long totalQuantity = Math.addExact(
+                    quantities.getOrDefault(item.getProductId(), 0L),
                     item.getQuantity()
             );
 
             if (totalQuantity > product.getAvailableStock()) {
-                throw new IllegalStateException(
-                        "Insufficient stock for product: " + item.getProductId()
+                throw new InsufficientStockException(
+                        item.getProductId(), totalQuantity, product.getAvailableStock()
                 );
             }
 

@@ -55,6 +55,11 @@ The seeded restaurant `restaurant101` (Spice Kitchen) provides prepared meals.
 Meal prices and availability are stored on `FoodProduct`, and each meal belongs
 to its restaurant's menu. Grocery stores and restaurants share the outlet repository.
 
+Register catalog products through the outlet's `addProduct` method. Products sold
+by different outlets use separate instances and distinct product IDs. Registration
+rejects an existing owner from another outlet and duplicate IDs within the same
+outlet. Menus and grocery inventories are exposed as read-only snapshots.
+
 | ProductId | ProductName | OutletId | Unit Price | Available Stock |
 |-----------|-------------|----------|------------|-----------------|
 | meal101 | Chicken Curry | restaurant101 | 25.00 | 20 |
@@ -136,6 +141,15 @@ An empty cart takes its outlet from the first successful addition. While it
 contains items, additions from another store or restaurant return HTTP 400.
 A rejected addition leaves both the existing items and outlet unchanged.
 
+If the combined quantity exceeds available stock, both cart addition and checkout
+return HTTP 409 with a message such as:
+
+```json
+{
+  "message": "Requested quantity 21 exceeds available stock 20 for product meal101"
+}
+```
+
 ### View Cart
 ```http
 GET /cart/view?userId=user101
@@ -146,12 +160,83 @@ Returns the complete `Cart` directly with HTTP 200:
 | Field | Contents |
 |-------|----------|
 | `cartId` | Cart identifier |
-| `outlet` | Store or restaurant, including inventory where exposed by the outlet; initially `null` for empty seeded carts |
+| `outlet` | Store or restaurant, including inventory where exposed by the outlet; initially `null` for a new empty cart |
 | `cartItems` | Items with the same fields as the add-product response above |
 | `user` | Cart owner; the user's cart back-reference is omitted |
 
 Cart items retain their captured names and unit prices. Viewing a cart does not
 look up its items again in the product catalog.
+
+For a valid user, the cart is created lazily on first access with a generated UUID,
+the correct owner and no outlet. Later requests reuse the same cart. An unknown
+user returns HTTP 404 and does not create a cart. Seed data supplies users and
+catalogs; cart storage belongs to the in-memory cart repository.
+
+Viewing returns a detached cart with an immutable snapshot of its item list.
+Additions and checkout coordinate on the same cart lock, so concurrent requests
+cannot bypass that cart's outlet or combined-quantity checks.
+
+### Place Order
+
+```http
+POST /orders
+Content-Type: application/json
+```
+
+Request Body
+```json
+{
+  "userId": "user101"
+}
+```
+
+Checkout requires a nonempty cart and rechecks product availability and prices.
+It copies the items into an order, preserving each meal's spice level and utensils
+selection. Grocery order items omit both customization fields.
+
+Checkout of an empty cart returns HTTP 409 with a clear error message.
+
+A successful checkout returns HTTP 201 with a `Location: /orders/{orderId}` header
+and the order directly in the response body. Example after adding two Chicken Curry
+meals with medium spice and utensils requested (ID and timestamp are generated):
+
+```json
+{
+  "orderId": "7e5f6e92-21c0-4b72-9b64-778fbf2957b5",
+  "userId": "user101",
+  "outletId": "restaurant101",
+  "items": [
+    {
+      "productId": "meal101",
+      "productName": "Chicken Curry",
+      "quantity": 2,
+      "unitPrice": 25.00,
+      "totalPrice": 50.00,
+      "spiceLevel": "MEDIUM",
+      "utensilsNeeded": true
+    }
+  ],
+  "createdAt": "2026-11-16T10:00:00Z",
+  "status": "PLACED",
+  "totalPrice": 50.00
+}
+```
+
+After the order is saved, the cart's items are cleared. The empty cart can then
+accept products from another outlet. Later cart changes do not alter the saved order.
+
+Cart locking applies within one application instance. Stock is checked but is not
+reserved or deducted; preventing overselling across different customers requires
+a separate atomic inventory operation.
+
+### View Order
+
+```http
+GET /orders/{orderId}
+```
+
+Returns the saved order directly with HTTP 200, including item quantities, prices,
+meal customizations, total and current status. An unknown order ID returns HTTP 404.
 
 ### Inventory Health
 ```http

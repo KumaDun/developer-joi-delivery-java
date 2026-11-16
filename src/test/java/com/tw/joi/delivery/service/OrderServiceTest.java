@@ -2,6 +2,8 @@ package com.tw.joi.delivery.service;
 
 import com.tw.joi.delivery.domain.*;
 import com.tw.joi.delivery.exception.OrderDoesNotExistException;
+import com.tw.joi.delivery.exception.EmptyCartException;
+import com.tw.joi.delivery.exception.InsufficientStockException;
 import com.tw.joi.delivery.repository.InMemoryOrderRepository;
 import com.tw.joi.delivery.repository.OrderRepository;
 import java.math.BigDecimal;
@@ -10,6 +12,10 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -134,7 +140,7 @@ class OrderServiceTest {
         when(cartService.getCartForUser("user101")).thenReturn(cart);
 
         assertThrows(
-                IllegalStateException.class,
+                EmptyCartException.class,
                 () -> orderService.placeOrder("user101")
         );
 
@@ -147,11 +153,13 @@ class OrderServiceTest {
         stubCheckout();
         product.setAvailableStock(1);
 
-        assertThrows(
-                IllegalStateException.class,
+        InsufficientStockException exception = assertThrows(
+                InsufficientStockException.class,
                 () -> orderService.placeOrder("user101")
         );
 
+        assertEquals("Requested quantity 2 exceeds available stock 1 for product product101",
+                exception.getMessage());
         assertEquals(1, cart.getCartItems().size());
         assertEquals(2, cart.getCartItems().getFirst().getQuantity());
         verify(orderRepository, never()).save(any(Order.class));
@@ -165,12 +173,64 @@ class OrderServiceTest {
         cart.getCartItems().add(new CartItem(product, 4));
 
         assertThrows(
-                IllegalStateException.class,
+                InsufficientStockException.class,
                 () -> orderService.placeOrder("user101")
         );
 
         assertEquals(2, cart.getCartItems().size());
         verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    @Test
+    void shouldHoldCartLockDuringValidationAndSaving() {
+        when(cartService.getCartForUser("user101")).thenReturn(cart);
+        when(productService.getProduct("product101", "store101"))
+                .thenAnswer(invocation -> {
+                    assertTrue(Thread.holdsLock(cart));
+                    return product;
+                });
+        doAnswer(invocation -> {
+            assertTrue(Thread.holdsLock(cart));
+            assertFalse(cart.getCartItems().isEmpty());
+            return invocation.callRealMethod();
+        }).when(orderRepository).save(any(Order.class));
+
+        Order order = orderService.placeOrder("user101");
+
+        assertTrue(cart.getCartItems().isEmpty());
+        assertSame(order, orderRepository.findById(order.getOrderId()).orElseThrow());
+    }
+
+    @Test
+    void shouldCreateOnlyOneOrderForConcurrentCheckoutsOfSameCart() throws Exception {
+        stubCheckout();
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var task = (java.util.concurrent.Callable<Optional<Order>>) () -> {
+                ready.countDown();
+                assertTrue(start.await(5, TimeUnit.SECONDS));
+                try {
+                    return Optional.of(orderService.placeOrder("user101"));
+                } catch (EmptyCartException exception) {
+                    return Optional.empty();
+                }
+            };
+            var first = executor.submit(task);
+            var second = executor.submit(task);
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+
+            long orders = List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS))
+                    .stream().filter(Optional::isPresent).count();
+
+            assertEquals(1, orders);
+            assertTrue(cart.getCartItems().isEmpty());
+            verify(orderRepository, times(1)).save(any(Order.class));
+        } finally {
+            start.countDown();
+        }
     }
 
     @Test

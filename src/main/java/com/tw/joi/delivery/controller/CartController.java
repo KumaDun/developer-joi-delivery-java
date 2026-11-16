@@ -24,7 +24,7 @@ public class CartController {
 
     @GetMapping("/view")
     public ResponseEntity<Cart> viewCart(@RequestParam(name = "userId") @NotBlank String userId) {
-        return ResponseEntity.ok(cartService.getCartForUser(userId));
+        return ResponseEntity.ok(cartService.getCartSnapshotForUser(userId));
     }
 
     // TODO delete product from cart

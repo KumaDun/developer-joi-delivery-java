@@ -3,10 +3,15 @@ package com.tw.joi.delivery.repository;
 import com.tw.joi.delivery.domain.Outlet;
 
 import java.util.Collection;
-import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class InMemoryOutletRepository implements StoreRepository {
+
+    private final Map<String, Outlet<?>> storesById = new ConcurrentHashMap<>();
 
     public InMemoryOutletRepository(Collection<? extends Outlet<?>> stores) {
         for (Outlet<?> store : stores) {
@@ -22,7 +27,7 @@ public class InMemoryOutletRepository implements StoreRepository {
     @Override
     public Optional<Outlet<?>> findByName(String storeName) {
         return storesById.values().stream()
-                .filter(store -> store.getName().equals(storeName))
+                .filter(store -> Objects.equals(store.getName(), storeName))
                 .findFirst();
     }
 
@@ -34,6 +39,6 @@ public class InMemoryOutletRepository implements StoreRepository {
 
     @Override
     public Collection<Outlet<?>> findAll() {
-        return Collections.unmodifiableCollection(storesById.values());
+        return List.copyOf(storesById.values());
     }
 }

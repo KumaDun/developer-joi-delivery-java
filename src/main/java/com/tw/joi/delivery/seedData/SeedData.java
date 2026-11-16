@@ -6,7 +6,6 @@ import jakarta.annotation.Nonnull;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 
 public class SeedData {
@@ -22,10 +21,6 @@ public class SeedData {
     public static User user101= SeedData.createUser("user101", "John", "Doe");
     public static User user102 = SeedData.createUser("user102", "Rachel", "Zane");
 
-    public static Map<String, Cart> cartForUsers = Map.of(
-        "user101", createCartForUser(user101, "cart101"),
-        "user102", createCartForUser(user102, "cart102"));
-
     public static List<GroceryProduct> groceryProducts =
         Arrays.asList(createGroceryProduct("Wheat Bread", "product101", store101),
                       createGroceryProduct("Spinach", "product102", store101),
@@ -37,13 +32,6 @@ public class SeedData {
 
     public static List<User> users = Arrays.asList(user101, user102);
     public static List<Outlet<?>> outlets = List.of(store101, store102, restaurant101);
-
-    public static Cart createCartForUser(User user, String cartId) {
-        return Cart.builder()
-            .cartId(cartId)
-            .user(user)
-            .build();
-    }
 
     public static GroceryStore createStore(String outletName, String storeId) {
         return GroceryStore.builder()
